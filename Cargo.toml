@@ -1,0 +1,16 @@
+[package]
+name = "usbip"
+version = "0.1.0"
+authors = ["Jiajie Chen <c@jia.je>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "0.2", features = ["rt-core", "tcp", "stream", "io-util"] }
+log = "0.4"
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "0.2", features = ["full"] }
+env_logger = "0.7"
