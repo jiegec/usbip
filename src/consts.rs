@@ -75,5 +75,11 @@ pub enum DescriptorType {
     String = 3,
     Interface = 4,
     Endpoint = 5,
+    DeviceQualifier = 6,
+    OtherSpeedConfiguration = 7,
+    InterfacePower = 8,
+    OTG = 9,
+    Debug = 0xA,
+    InterfaceAssociation = 0xB,
     BOS = 0xF,
 }

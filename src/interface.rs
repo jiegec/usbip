@@ -7,4 +7,5 @@ pub struct UsbInterface {
     pub interface_protocol: u8,
     pub endpoints: Vec<UsbEndpoint>,
     pub string_interface: u8,
+    pub class_specific_descriptor: Vec<u8>,
 }

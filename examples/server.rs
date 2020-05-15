@@ -17,6 +17,15 @@ async fn main() {
                 max_packet_size: 0x08, // 8 bytes
                 interval: 10,
             }],
+            vec![
+                0x09, // bLength
+                0x21, // bDescriptorType: HID
+                0x11, 0x01, // bcdHID 1.11
+                0x00, // bCountryCode
+                0x01, // bNumDescriptors
+                0x22, // bDescriptorType[0] HID
+                0x22, 0x00, // wDescriptorLength[0]
+            ],
         )],
     };
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 3240);

@@ -64,6 +64,7 @@ impl UsbDevice {
         interface_protocol: u8,
         name: &str,
         endpoints: Vec<UsbEndpoint>,
+        class_specific_descriptor: Vec<u8>,
     ) -> Self {
         let string_interface = self.new_string(name);
         self.interfaces.push(UsbInterface {
@@ -72,6 +73,7 @@ impl UsbDevice {
             interface_protocol,
             endpoints,
             string_interface,
+            class_specific_descriptor,
         });
         self
     }
@@ -223,7 +225,10 @@ impl UsbDevice {
                                         intf.interface_protocol,    // bInterfaceProtocol
                                         intf.string_interface,      //iInterface
                                     ];
-                                    // TODO: endpoints
+                                    // class specific endpoint
+                                    let mut specific = intf.class_specific_descriptor.clone();
+                                    intf_desc.append(&mut specific);
+                                    // endpoint descriptors
                                     for endpoint in &intf.endpoints {
                                         let mut ep_desc = vec![
                                             0x07,                // bLength
@@ -242,6 +247,11 @@ impl UsbDevice {
                                 let len = desc.len() as u16;
                                 desc[2] = len as u8;
                                 desc[3] = (len >> 8) as u8;
+
+                                // requested len too short: wLength < real length
+                                if length < len {
+                                    desc.resize(length as usize, 0);
+                                }
                                 return Ok(desc);
                             }
                             _ => unimplemented!("desc type"),
