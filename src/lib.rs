@@ -2,6 +2,7 @@ use futures::stream::StreamExt;
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use std::collections::HashMap;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -85,10 +86,12 @@ async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> 
                 let device = current_import_device.unwrap();
                 let real_ep = if direction == 0 { ep } else { ep | 0x80 };
                 let usb_ep = device.find_ep(real_ep as u8).unwrap();
-                debug!("To endpoint {:?}", ep);
+                debug!("->Endpoint {:02x?}", usb_ep);
+                debug!("->Setup {:02x?}", setup);
                 let resp = device
                     .handle_urb(&mut socket, usb_ep, transfer_buffer_length, setup)
                     .await?;
+                debug!("<-Resp {:02x?}", resp);
 
                 // USBIP_RET_USBMIT
                 // command

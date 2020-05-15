@@ -73,13 +73,6 @@ pub enum DescriptorType {
     Device = 1,
     Configuration = 2,
     String = 3,
+    Interface = 4,
     BOS = 0xF,
-}
-
-#[derive(Copy, Clone, Debug, FromPrimitive)]
-pub enum StringType {
-    LangId = 0,
-    Manufacturer = 1,
-    Product = 2,
-    Serial = 3,
 }

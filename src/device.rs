@@ -18,11 +18,17 @@ pub struct UsbDevice {
     pub interfaces: Vec<UsbInterface>,
     pub ep0_in: UsbEndpoint,
     pub ep0_out: UsbEndpoint,
+    // strings
+    pub string_pool: HashMap<u8, String>,
+    pub string_configuration: u8,
+    pub string_manufacturer: u8,
+    pub string_product: u8,
+    pub string_serial: u8,
 }
 
 impl UsbDevice {
     pub fn new(index: u32) -> Self {
-        Self {
+        let mut res = Self {
             path: format!("/sys/device/usbip/{}", index),
             bus_id: format!("{}", index),
             dev_num: index,
@@ -39,8 +45,16 @@ impl UsbDevice {
                 max_packet_size: EP0_MAX_PACKET_SIZE,
                 interval: 0,
             },
+            // configured by default
+            configuration_value: 1,
+            num_configurations: 1,
             ..Self::default()
-        }
+        };
+        res.string_configuration = res.new_string("Default Configuration");
+        res.string_manufacturer = res.new_string("Manufacturer");
+        res.string_product = res.new_string("Product");
+        res.string_serial = res.new_string("Serial");
+        res
     }
 
     pub fn with_interface(
@@ -48,14 +62,27 @@ impl UsbDevice {
         interface_class: u8,
         interface_subclass: u8,
         interface_protocol: u8,
+        name: &str,
     ) -> Self {
+        let string_interface = self.new_string(name);
         self.interfaces.push(UsbInterface {
             interface_class,
             interface_subclass,
             interface_protocol,
             endpoints: vec![],
+            string_interface,
         });
         self
+    }
+
+    pub(crate) fn new_string(&mut self, s: &str) -> u8 {
+        for i in 1.. {
+            if self.string_pool.get(&i).is_none() {
+                self.string_pool.insert(i, s.to_string());
+                return i;
+            }
+        }
+        panic!("string poll exhausted")
     }
 
     pub(crate) fn find_ep(&self, ep: u8) -> Option<UsbEndpoint> {
@@ -139,8 +166,8 @@ impl UsbDevice {
                             Some(Device) => {
                                 debug!("Get device descriptor");
                                 let desc = [
-                                    0x12, // bLength
-                                    0x01, // bDescriptorType: Device
+                                    0x12,         // bLength
+                                    Device as u8, // bDescriptorType: Device
                                     0x10,
                                     0x02,                      // bcdUSB: USB 2.1
                                     self.device_class,         // bDeviceClass
@@ -153,12 +180,56 @@ impl UsbDevice {
                                     (self.product_id >> 8) as u8,
                                     self.device_bcd as u8, // bcdDevice
                                     (self.device_bcd >> 8) as u8,
-                                    StringType::Manufacturer as u8,
-                                    StringType::Product as u8,
-                                    StringType::Serial as u8,
+                                    self.string_manufacturer, // iManufacturer
+                                    self.string_product,      // iProduct
+                                    self.string_serial,       // iSerial
                                     self.num_configurations,
                                 ];
                                 return Ok(desc.to_vec());
+                            }
+                            Some(BOS) => {
+                                debug!("Get BOS descriptor");
+                                let desc = [
+                                    0x05,      // bLength
+                                    BOS as u8, // bDescriptorType: BOS
+                                    0x05, 0x00, // wTotalLength
+                                    0x00, // bNumCapabilities
+                                ];
+                                return Ok(desc.to_vec());
+                            }
+                            Some(Configuration) => {
+                                debug!("Get configuration descriptor");
+                                let mut desc = vec![
+                                    0x09,                // bLength
+                                    Configuration as u8, // bDescriptorType: Configuration
+                                    0x00,
+                                    0x00, // wTotalLength: to be filled below
+                                    self.interfaces.len() as u8, // bNumInterfaces
+                                    self.configuration_value, // bConfigurationValue
+                                    self.string_configuration, // iConfiguration
+                                    0x80, // bmAttributes Bus Powered
+                                    0x32, // bMaxPower 100mA
+                                ];
+                                for (i, intf) in self.interfaces.iter().enumerate() {
+                                    let mut intf_desc = vec![
+                                        0x09,                       // bLength
+                                        Interface as u8,            // bDescriptorType: Interface
+                                        i as u8,                    // bInterfaceNum
+                                        0x00,                       // bAlternateSettings
+                                        intf.endpoints.len() as u8, // bNumEndpoints
+                                        intf.interface_class,       // bInterfaceClass
+                                        intf.interface_subclass,    // bInterfaceSubClass
+                                        intf.interface_protocol,    // bInterfaceProtocol
+                                        intf.string_interface,      //iInterface
+                                    ];
+                                    // TODO: endpoints
+                                    desc.append(&mut intf_desc);
+                                }
+                                // length
+                                let len = desc.len() as u16;
+                                desc[2] = len as u8;
+                                desc[3] = (len >> 8) as u8;
+                                return Ok(desc);
                             }
                             _ => unimplemented!("desc type"),
                         }

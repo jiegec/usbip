@@ -10,6 +10,7 @@ async fn main() {
             usbip::ClassCode::HID as u8,
             0x00,
             0x00,
+            "Test HID",
         )],
     };
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 3240);
