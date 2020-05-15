@@ -168,7 +168,7 @@ impl UsbDevice {
                         match FromPrimitive::from_u16(value >> 8) {
                             Some(Device) => {
                                 debug!("Get device descriptor");
-                                let desc = [
+                                let mut desc = vec![
                                     0x12,         // bLength
                                     Device as u8, // bDescriptorType: Device
                                     0x10,
@@ -188,17 +188,27 @@ impl UsbDevice {
                                     self.string_serial,       // iSerial
                                     self.num_configurations,
                                 ];
-                                return Ok(desc.to_vec());
+
+                                // requested len too short: wLength < real length
+                                if length < desc.len() as u16 {
+                                    desc.resize(length as usize, 0);
+                                }
+                                return Ok(desc);
                             }
                             Some(BOS) => {
                                 debug!("Get BOS descriptor");
-                                let desc = [
+                                let mut desc = vec![
                                     0x05,      // bLength
                                     BOS as u8, // bDescriptorType: BOS
                                     0x05, 0x00, // wTotalLength
                                     0x00, // bNumCapabilities
                                 ];
-                                return Ok(desc.to_vec());
+
+                                // requested len too short: wLength < real length
+                                if length < desc.len() as u16 {
+                                    desc.resize(length as usize, 0);
+                                }
+                                return Ok(desc);
                             }
                             Some(Configuration) => {
                                 debug!("Get configuration descriptor");
@@ -249,10 +259,44 @@ impl UsbDevice {
                                 desc[3] = (len >> 8) as u8;
 
                                 // requested len too short: wLength < real length
-                                if length < len {
+                                if length < desc.len() as u16 {
                                     desc.resize(length as usize, 0);
                                 }
                                 return Ok(desc);
+                            }
+                            Some(String) => {
+                                let index = value as u8;
+                                if index == 0 {
+                                    // language ids
+                                    let mut desc = vec![
+                                        4,                            // bLength
+                                        DescriptorType::String as u8, // bDescriptorType
+                                        0x09,
+                                        0x04, // bLANGID, en-US
+                                    ];
+                                    // requested len too short: wLength < real length
+                                    if length < desc.len() as u16 {
+                                        desc.resize(length as usize, 0);
+                                    }
+                                    return Ok(desc);
+                                } else {
+                                    let s = &self.string_pool[&index];
+                                    let bytes: Vec<u16> = s.encode_utf16().collect();
+                                    let mut desc = vec![
+                                        (2 + bytes.len() * 2) as u8,  // bLength
+                                        DescriptorType::String as u8, // bDescriptorType
+                                    ];
+                                    for byte in bytes {
+                                        desc.push(byte as u8);
+                                        desc.push((byte >> 8) as u8);
+                                    }
+
+                                    // requested len too short: wLength < real length
+                                    if length < desc.len() as u16 {
+                                        desc.resize(length as usize, 0);
+                                    }
+                                    return Ok(desc);
+                                }
                             }
                             _ => unimplemented!("desc type"),
                         }
@@ -260,7 +304,7 @@ impl UsbDevice {
                     _ => unimplemented!("control in"),
                 }
             }
-            _ => unimplemented!("transfer"),
+            _ => unimplemented!("transfer to {:?}", ep),
         }
         Ok(vec![])
     }
