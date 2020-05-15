@@ -1,5 +1,7 @@
 use futures::stream::StreamExt;
 use log::*;
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -8,101 +10,22 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
 mod consts;
+mod device;
+mod endpoint;
+mod interface;
+mod util;
 pub use consts::*;
-
-#[derive(Clone, Debug, Default)]
-pub struct UsbInterface {
-    pub interface_class: u8,
-    pub interface_subclass: u8,
-    pub interface_protocol: u8,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct UsbDevice {
-    pub path: String,
-    pub bus_id: String,
-    pub bus_num: u32,
-    pub dev_num: u32,
-    pub speed: u32,
-    pub vendor_id: u16,
-    pub product_id: u16,
-    pub device_bcd: u16,
-    pub device_class: u8,
-    pub device_subclass: u8,
-    pub device_protocol: u8,
-    pub configuration_value: u8,
-    pub num_configurations: u8,
-    pub interfaces: Vec<UsbInterface>,
-}
-
-impl UsbDevice {
-    pub fn new(index: u32) -> Self {
-        Self {
-            path: format!("/sys/device/usbip/{}", index),
-            bus_id: format!("{}", index),
-            dev_num: index,
-            speed: UsbSpeed::High as u32,
-            ..Self::default()
-        }
-    }
-
-    pub fn with_interface(
-        mut self,
-        interface_class: u8,
-        interface_subclass: u8,
-        interface_protocol: u8,
-    ) -> Self {
-        self.interfaces.push(UsbInterface {
-            interface_class,
-            interface_subclass,
-            interface_protocol,
-        });
-        self
-    }
-
-    async fn write_dev(&self, socket: &mut TcpStream) -> Result<()> {
-        // pad to 256 bytes
-        let mut path = self.path.clone().into_bytes();
-        assert!(path.len() <= 256);
-        path.resize(256, 0);
-        socket.write_all(&path).await?;
-
-        // the same
-        let mut bus_id = self.bus_id.clone().into_bytes();
-        assert!(bus_id.len() <= 32);
-        bus_id.resize(32, 0);
-        socket.write_all(&bus_id).await?;
-
-        // fields
-        socket.write_u32(self.bus_num).await?;
-        socket.write_u32(self.dev_num).await?;
-        socket.write_u32(self.speed).await?;
-        socket.write_u16(self.vendor_id).await?;
-        socket.write_u16(self.product_id).await?;
-        socket.write_u16(self.device_bcd).await?;
-        socket.write_u8(self.device_class).await?;
-        socket.write_u8(self.device_subclass).await?;
-        socket.write_u8(self.device_protocol).await?;
-        socket.write_u8(self.configuration_value).await?;
-        socket.write_u8(self.num_configurations).await?;
-        socket.write_u8(self.interfaces.len() as u8).await?;
-
-        for interface in &self.interfaces {
-            socket.write_u8(interface.interface_class).await?;
-            socket.write_u8(interface.interface_subclass).await?;
-            socket.write_u8(interface.interface_protocol).await?;
-            // padding
-            socket.write_u8(0).await?;
-        }
-        Ok(())
-    }
-}
+pub use device::*;
+pub use endpoint::*;
+pub use interface::*;
+pub use util::*;
 
 pub struct UsbIpServer {
     pub devices: Vec<UsbDevice>,
 }
 
 async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> {
+    let mut current_import_device = None;
     loop {
         let mut command = [0u8; 4];
         socket.read_exact(&mut command).await?;
@@ -116,16 +39,78 @@ async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> 
                 socket.write_u32(0).await?;
                 socket.write_u32(server.devices.len() as u32).await?;
                 for dev in &server.devices {
-                    dev.write_dev(&mut socket).await?;
+                    dev.write_dev_with_interfaces(&mut socket).await?;
                 }
                 debug!("Sent OP_REP_DEVLIST");
             }
             [0x01, 0x11, 0x80, 0x03] => {
                 debug!("Got OP_REQ_IMPORT");
                 let _status = socket.read_u32().await?;
+                let mut bus_id = [0u8; 32];
+                socket.read_exact(&mut bus_id).await?;
+                current_import_device = None;
+                for device in &server.devices {
+                    let mut expected = device.bus_id.as_bytes().to_vec();
+                    expected.resize(32, 0);
+                    if expected == bus_id {
+                        current_import_device = Some(device);
+                        info!("Found device {:?}", device.path);
+                        break;
+                    }
+                }
+
+                // OP_REP_IMPORT
+                debug!("Sent OP_REP_IMPORT");
+                socket.write_u32(0x01110003).await?;
+                if let Some(dev) = current_import_device {
+                    socket.write_u32(0).await?;
+                    dev.write_dev(&mut socket).await?;
+                } else {
+                    socket.write_u32(1).await?;
+                }
             }
             [0x00, 0x00, 0x00, 0x01] => {
                 debug!("Got USBIP_CMD_SUBMIT");
+                let seq_num = socket.read_u32().await?;
+                let dev_id = socket.read_u32().await?;
+                let direction = socket.read_u32().await?;
+                let ep = socket.read_u32().await?;
+                let transfer_flags = socket.read_u32().await?;
+                let transfer_buffer_length = socket.read_u32().await?;
+                let start_frame = socket.read_u32().await?;
+                let number_of_packets = socket.read_u32().await?;
+                let interval = socket.read_u32().await?;
+                let mut setup = [0u8; 8];
+                socket.read_exact(&mut setup).await?;
+                let device = current_import_device.unwrap();
+                let real_ep = if direction == 0 { ep } else { ep | 0x80 };
+                let usb_ep = device.find_ep(real_ep as u8).unwrap();
+                debug!("To endpoint {:?}", ep);
+                let resp = device
+                    .handle_urb(&mut socket, usb_ep, transfer_buffer_length, setup)
+                    .await?;
+
+                // USBIP_RET_USBMIT
+                // command
+                socket.write_u32(0x3).await?;
+                socket.write_u32(seq_num).await?;
+                socket.write_u32(dev_id).await?;
+                socket.write_u32(direction).await?;
+                socket.write_u32(ep).await?;
+                // status
+                socket.write_u32(0).await?;
+                // actual length
+                socket.write_u32(resp.len() as u32).await?;
+                // start frame
+                socket.write_u32(0).await?;
+                // number of packets
+                socket.write_u32(0).await?;
+                // error count
+                socket.write_u32(0).await?;
+                // setup
+                socket.write_all(&setup).await?;
+                // data
+                socket.write_all(&resp).await?;
             }
             [0x00, 0x00, 0x00, 0x02] => {
                 debug!("Got USBIP_CMD_UNLINK");

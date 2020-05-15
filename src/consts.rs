@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Copy, Clone, Debug)]
 pub enum UsbSpeed {
     Unknown = 0x0,
@@ -34,4 +36,50 @@ pub enum ClassCode {
     Misc = 0xEF,
     ApplicationSpecific = 0xFE,
     VendorSpecific = 0xFF,
+}
+
+#[derive(Copy, Clone, Debug, FromPrimitive)]
+pub enum EndpointAttributes {
+    Control = 0,
+    Isochronous,
+    Bulk,
+    Interrupt,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Direction {
+    In,
+    Out,
+}
+
+pub const EP0_MAX_PACKET_SIZE: u16 = 64;
+
+#[derive(Copy, Clone, Debug, FromPrimitive)]
+pub enum StandardRequest {
+    GetStatus = 0,
+    ClearFeature = 1,
+    SetFeature = 3,
+    GetDescriptor = 6,
+    SetDescriptor = 7,
+    GetConfiguration = 8,
+    SetConfiguration = 9,
+    GetInterface = 0xA,
+    SetInterface = 0x11,
+    SynthFrame = 0x12,
+}
+
+#[derive(Copy, Clone, Debug, FromPrimitive)]
+pub enum DescriptorType {
+    Device = 1,
+    Configuration = 2,
+    String = 3,
+    BOS = 0xF,
+}
+
+#[derive(Copy, Clone, Debug, FromPrimitive)]
+pub enum StringType {
+    LangId = 0,
+    Manufacturer = 1,
+    Product = 2,
+    Serial = 3,
 }
