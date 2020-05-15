@@ -74,5 +74,6 @@ pub enum DescriptorType {
     Configuration = 2,
     String = 3,
     Interface = 4,
+    Endpoint = 5,
     BOS = 0xF,
 }

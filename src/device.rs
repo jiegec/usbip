@@ -63,13 +63,14 @@ impl UsbDevice {
         interface_subclass: u8,
         interface_protocol: u8,
         name: &str,
+        endpoints: Vec<UsbEndpoint>,
     ) -> Self {
         let string_interface = self.new_string(name);
         self.interfaces.push(UsbInterface {
             interface_class,
             interface_subclass,
             interface_protocol,
-            endpoints: vec![],
+            endpoints,
             string_interface,
         });
         self
@@ -223,6 +224,18 @@ impl UsbDevice {
                                         intf.string_interface,      //iInterface
                                     ];
                                     // TODO: endpoints
+                                    for endpoint in &intf.endpoints {
+                                        let mut ep_desc = vec![
+                                            0x07,                // bLength
+                                            Endpoint as u8,      // bDescriptorType: Endpoint
+                                            endpoint.address,    // bEndpointAddress
+                                            endpoint.attributes, // bmAttributes
+                                            endpoint.max_packet_size as u8,
+                                            (endpoint.max_packet_size >> 8) as u8, // wMaxPacketSize
+                                            endpoint.interval,                     // bInterval
+                                        ];
+                                        intf_desc.append(&mut ep_desc);
+                                    }
                                     desc.append(&mut intf_desc);
                                 }
                                 // length

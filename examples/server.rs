@@ -11,6 +11,12 @@ async fn main() {
             0x00,
             0x00,
             "Test HID",
+            vec![usbip::UsbEndpoint {
+                address: 0x81,         // IN
+                attributes: 0x03,      // Interrupt
+                max_packet_size: 0x08, // 8 bytes
+                interval: 10,
+            }],
         )],
     };
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 3240);
