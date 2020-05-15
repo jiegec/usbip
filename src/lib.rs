@@ -7,12 +7,17 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
+mod consts;
+pub use consts::*;
+
+#[derive(Clone, Debug, Default)]
 pub struct UsbInterface {
     pub interface_class: u8,
     pub interface_subclass: u8,
     pub interface_protocol: u8,
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct UsbDevice {
     pub path: String,
     pub bus_id: String,
@@ -31,6 +36,30 @@ pub struct UsbDevice {
 }
 
 impl UsbDevice {
+    pub fn new(index: u32) -> Self {
+        Self {
+            path: format!("/sys/device/usbip/{}", index),
+            bus_id: format!("{}", index),
+            dev_num: index,
+            speed: UsbSpeed::High as u32,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_interface(
+        mut self,
+        interface_class: u8,
+        interface_subclass: u8,
+        interface_protocol: u8,
+    ) -> Self {
+        self.interfaces.push(UsbInterface {
+            interface_class,
+            interface_subclass,
+            interface_protocol,
+        });
+        self
+    }
+
     async fn write_dev(&self, socket: &mut TcpStream) -> Result<()> {
         // pad to 256 bytes
         let mut path = self.path.clone().into_bytes();
@@ -62,6 +91,8 @@ impl UsbDevice {
             socket.write_u8(interface.interface_class).await?;
             socket.write_u8(interface.interface_subclass).await?;
             socket.write_u8(interface.interface_protocol).await?;
+            // padding
+            socket.write_u8(0).await?;
         }
         Ok(())
     }
