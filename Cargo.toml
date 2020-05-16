@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Jiajie Chen <c@jia.je>"]
 edition = "2018"
 license = "MIT"
-license-file = "LICENSE"
 repository = "https://github.com/jiegec/usbip"
 description = "A library to run USB/IP server"
 
