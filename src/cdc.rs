@@ -3,13 +3,41 @@ use super::*;
 
 /// A handler of a CDC ACM
 #[derive(Clone)]
-pub struct UsbCDCACMHandler {}
+pub struct UsbCDCACMHandler {
+    pub tx_buffer: Vec<u8>,
+}
 
 pub const CDC_ACM_SUBCLASS: u8 = 0x02;
 
 impl UsbCDCACMHandler {
     pub fn new() -> Self {
-        Self {}
+        Self { tx_buffer: vec![] }
+    }
+
+    pub fn endpoints() -> Vec<UsbEndpoint> {
+        vec![
+            // state notification
+            UsbEndpoint {
+                address: 0x81,                                   // IN
+                attributes: EndpointAttributes::Interrupt as u8, // Interrupt
+                max_packet_size: 0x08,                           // 8 bytes
+                interval: 10,
+            },
+            // bulk in
+            UsbEndpoint {
+                address: 0x82,                              // IN
+                attributes: EndpointAttributes::Bulk as u8, // Bulk
+                max_packet_size: 512,                       // 512 bytes
+                interval: 0,
+            },
+            // bulk out
+            UsbEndpoint {
+                address: 0x02,                              // OUT
+                attributes: EndpointAttributes::Bulk as u8, // Bulk
+                max_packet_size: 512,                       // 512 bytes
+                interval: 0,
+            },
+        ]
     }
 }
 
@@ -32,10 +60,18 @@ impl UsbInterfaceHandler for UsbCDCACMHandler {
             // bulk
             if let Direction::Out = ep.direction() {
                 // bulk out
-                info!("Got bulk out: {}", String::from_utf8_lossy(&req));
+                info!(
+                    "Got bulk out: {:?} \"{}\"",
+                    req,
+                    String::from_utf8_lossy(&req)
+                );
                 return Ok(vec![]);
             } else {
-                return Ok(vec![]);
+                // bulk in
+                // TODO: handle max packet size
+                let resp = self.tx_buffer.clone();
+                self.tx_buffer.clear();
+                return Ok(resp);
             }
         }
         Ok(vec![])

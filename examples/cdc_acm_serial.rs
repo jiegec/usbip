@@ -17,29 +17,7 @@ async fn main() {
             usbip::cdc::CDC_ACM_SUBCLASS,
             0x00,
             "Test CDC ACM",
-            vec![
-                // state notification
-                usbip::UsbEndpoint {
-                    address: 0x81,         // IN
-                    attributes: usbip::EndpointAttributes::Interrupt as u8,      // Interrupt
-                    max_packet_size: 0x08, // 8 bytes
-                    interval: 10,
-                },
-                // bulk in
-                usbip::UsbEndpoint {
-                    address: 0x82,         // IN
-                    attributes: usbip::EndpointAttributes::Bulk as u8,      // Bulkd
-                    max_packet_size: 512, // 512 bytes
-                    interval: 0,
-                },
-                // bulk out
-                usbip::UsbEndpoint {
-                    address: 0x02,         // OUT
-                    attributes: usbip::EndpointAttributes::Bulk as u8,      // Bulkd
-                    max_packet_size: 512, // 512 bytes
-                    interval: 0,
-                },
-            ],
+            usbip::cdc::UsbCDCACMHandler::endpoints(),
             handler.clone(),
         )],
     };
@@ -49,5 +27,13 @@ async fn main() {
     loop {
         // sleep 1s
         tokio::time::delay_for(Duration::new(1, 0)).await;
+        let mut handler = handler.lock().unwrap();
+        if let Some(acm) = handler
+            .as_any()
+            .downcast_mut::<usbip::cdc::UsbCDCACMHandler>()
+        {
+            acm.tx_buffer.push(b'a');
+            info!("Simulate a key event");
+        }
     }
 }
