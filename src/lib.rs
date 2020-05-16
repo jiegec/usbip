@@ -360,10 +360,4 @@ mod test {
         // OP_REQ_IMPORT
         assert_eq!(mock_socket.output.len(), 0x140);
     }
-
-    #[test]
-    fn test_new_from_host() {
-        // should not panic
-        let _ = UsbIpServer::new_from_host();
-    }
 }
