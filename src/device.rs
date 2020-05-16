@@ -283,6 +283,7 @@ impl UsbDevice {
                                 return Ok(desc);
                             }
                             Some(String) => {
+                                debug!("Get string descriptor");
                                 let index = setup_packet.value as u8;
                                 if index == 0 {
                                     // language ids
@@ -316,7 +317,10 @@ impl UsbDevice {
                                     return Ok(desc);
                                 }
                             }
-                            _ => unimplemented!("desc type"),
+                            _ => {
+                                warn!("unknown desc type");
+                                return Ok(vec![]);
+                            },
                         }
                     }
                     _ if setup_packet.request_type & 0xF == 1 => {

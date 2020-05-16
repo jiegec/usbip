@@ -41,6 +41,7 @@ impl UsbIpServer {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {
             for dev in list.iter() {
+                let handle = dev.open().unwrap();
                 let desc = dev.device_descriptor().unwrap();
                 let cfg = dev.active_config_descriptor().unwrap();
                 let mut interfaces = vec![];
@@ -71,7 +72,7 @@ impl UsbIpServer {
                         handler,
                     });
                 }
-                devices.push(UsbDevice {
+                let mut device = UsbDevice {
                     path: format!(
                         "/sys/bus/{}/{}/{}",
                         dev.bus_number(),
@@ -106,8 +107,21 @@ impl UsbIpServer {
                         max_packet_size: desc.max_packet_size() as u16,
                         interval: 0,
                     },
+                    interfaces,
                     ..UsbDevice::default()
-                });
+                };
+
+                // set strings
+                if let Some(index) = desc.manufacturer_string_index() {
+                    device.string_manufacturer = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                }
+                if let Some(index) = desc.product_string_index() {
+                    device.string_product = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                }
+                if let Some(index) = desc.serial_number_string_index() {
+                    device.string_serial = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                }
+                devices.push(device);
             }
         }
         Self { devices }
