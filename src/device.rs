@@ -64,10 +64,10 @@ impl UsbDevice {
         interface_protocol: u8,
         name: &str,
         endpoints: Vec<UsbEndpoint>,
-        handler: Box<dyn UsbInterfaceHandler + Send>,
+        handler: Arc<Mutex<Box<dyn UsbInterfaceHandler + Send>>>,
     ) -> Self {
         let string_interface = self.new_string(name);
-        let class_specific_descriptor = handler.get_class_specific_descriptor();
+        let class_specific_descriptor = handler.lock().unwrap().get_class_specific_descriptor();
         self.interfaces.push(UsbInterface {
             interface_class,
             interface_subclass,
@@ -75,7 +75,7 @@ impl UsbDevice {
             endpoints,
             string_interface,
             class_specific_descriptor,
-            handler: Arc::new(Mutex::new(handler)),
+            handler,
         });
         self
     }

@@ -2,7 +2,8 @@ use futures::stream::StreamExt;
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::collections::HashMap;
+use std::any::Any;
+use std::collections::{HashMap, VecDeque};
 use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -127,7 +128,7 @@ async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> 
     }
 }
 
-pub async fn server(addr: &SocketAddr, server: UsbIpServer) {
+pub async fn server(addr: SocketAddr, server: UsbIpServer) {
     let mut listener = TcpListener::bind(addr).await.expect("bind to addr");
 
     let server = async move {

@@ -21,4 +21,6 @@ pub trait UsbInterfaceHandler {
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>>;
+
+    fn as_any(&mut self) -> &mut dyn Any;
 }

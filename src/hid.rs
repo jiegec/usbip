@@ -1,17 +1,55 @@
 use super::*;
 
+// reference:
+// HID 1.11: https://www.usb.org/sites/default/files/documents/hid1_11.pdf
+// HID Usage Tables 1.12: https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
+
+#[derive(Clone)]
+enum UsbHidHandlerState {
+    Idle,
+    KeyDown,
+}
+
 #[derive(Clone)]
 pub struct UsbHidHandler {
     pub report_descriptor: Vec<u8>,
+    pub pending_key_events: VecDeque<UsbHidReportKeyboard>,
+    state: UsbHidHandlerState,
+}
+
+#[derive(Clone)]
+pub struct UsbHidReportKeyboard {
+    pub modifier: u8,
+    pub keys: [u8; 6],
+}
+
+impl UsbHidReportKeyboard {
+    pub fn from_ascii(ascii: u8) -> UsbHidReportKeyboard {
+        // TODO: casing
+        let key = match ascii {
+            b'a'..=b'z' => ascii - b'a' + 4,
+            b'1'..=b'9' => ascii - b'1' + 30,
+            b'0' => 39,
+            b'\r' | b'\n' => 40,
+            _ => unimplemented!("Unrecognized ascii {}", ascii),
+        };
+        UsbHidReportKeyboard {
+            modifier: 0,
+            keys: [key, 0, 0, 0, 0, 0],
+        }
+    }
 }
 
 impl UsbHidHandler {
     pub fn new_keyboard() -> Self {
         Self {
+            pending_key_events: VecDeque::new(),
+            state: UsbHidHandlerState::Idle,
             report_descriptor: vec![
                 0x05, 0x01, // Usage Page (Generic Desktop)
                 0x09, 0x06, // Usage (Keyboard)
                 0xA1, 0x01, // Collection (Application)
+                // Modifier
                 0x05, 0x07, // Key Codes
                 0x19, 0xE0, // Usage Min
                 0x29, 0xE7, // Usage Max
@@ -20,20 +58,13 @@ impl UsbHidHandler {
                 0x75, 0x01, // Report Size (1)
                 0x95, 0x08, // Report Count (8)
                 0x81, 0x02, // Input
-                0x95, 0x01, // Report Count
-                0x75, 0x08, // Report Size
+                // Reserved
+                0x95, 0x01, // Report Count (1)
+                0x75, 0x08, // Report Size (8)
                 0x81, 0x01, // Input
-                0x95, 0x05, // Report Count
-                0x75, 0x01, // Report Size
-                0x05, 0x08, // Usage Page
-                0x19, 0x01, // Usage Min
-                0x29, 0x05, // Usage Max
-                0x91, 0x02, // Output
-                0x95, 0x01, // Report Count
-                0x75, 0x03, // Report Size,
-                0x91, 0x01, // Output
-                0x95, 0x06, // Report Count
-                0x75, 0x08, // Report Size
+                // key codes
+                0x95, 0x06, // Report Count (6)
+                0x75, 0x08, // Report Size (8)
                 0x15, 0x00, // Logic Min
                 0x25, 0x65, // Logic Max
                 0x05, 0x07, // Usage Page
@@ -71,6 +102,26 @@ impl UsbInterfaceHandler for UsbHidHandler {
             }
         } else {
             // interrupt transfer
+            if let Direction::In = ep.direction() {
+                // interrupt in
+                match self.state {
+                    UsbHidHandlerState::Idle => {
+                        if let Some(report) = self.pending_key_events.pop_front() {
+                            let mut resp = vec![report.modifier, 0];
+                            resp.extend_from_slice(&report.keys);
+                            info!("HID key down");
+                            self.state = UsbHidHandlerState::KeyDown;
+                            return Ok(resp);
+                        }
+                    }
+                    UsbHidHandlerState::KeyDown => {
+                        let resp = vec![0; 6];
+                        info!("HID key up");
+                        self.state = UsbHidHandlerState::Idle;
+                        return Ok(resp);
+                    }
+                }
+            }
         }
         Ok(vec![])
     }
@@ -87,6 +138,10 @@ impl UsbInterfaceHandler for UsbHidHandler {
             self.report_descriptor.len() as u8,
             (self.report_descriptor.len() >> 8) as u8, // wDescriptorLength[0]
         ];
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
