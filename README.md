@@ -2,6 +2,8 @@
 
 A Rust library to run a USB/IP server to simulate USB devices.
 
+[![Coverage Status](https://coveralls.io/repos/github/jiegec/usbip/badge.svg?branch=master)](https://coveralls.io/github/jiegec/usbip?branch=master)
+
 ## How to use
 
 See examples directory. Two examples are provided:
