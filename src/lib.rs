@@ -164,75 +164,17 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::{
-        io::*,
-        pin::Pin,
-        task::{Context, Poll},
-    };
-    use tokio::io::{AsyncRead, AsyncWrite};
-
-    pub struct MockSocket {
-        input: Cursor<Vec<u8>>,
-        output: Vec<u8>,
-    }
-
-    impl MockSocket {
-        pub fn new(input: Vec<u8>) -> Self {
-            Self {
-                input: Cursor::new(input),
-                output: vec![],
-            }
-        }
-    }
-
-    impl AsyncRead for MockSocket {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize>> {
-            Poll::Ready(std::io::Read::read(&mut self.get_mut().input, buf))
-        }
-    }
-
-    impl AsyncWrite for MockSocket {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<Result<usize>> {
-            self.get_mut().output.extend_from_slice(buf);
-            Poll::Ready(Ok(buf.len()))
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
     #[tokio::test]
     async fn req_devlist() {
-        let intf_handler = Arc::new(Mutex::new(
-            Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
-        ));
-        let server = UsbIpServer {
-            devices: vec![UsbDevice::new(0).with_interface(
-                ClassCode::CDC as u8,
-                cdc::CDC_ACM_SUBCLASS,
-                0x00,
-                "Test CDC ACM",
-                cdc::UsbCdcAcmHandler::endpoints(),
-                intf_handler.clone(),
-            )],
-        };
+        let server = UsbIpServer { devices: vec![] };
 
         // OP_REQ_DEVLIST
-        let mut mock_socket = MockSocket::new(vec![0x01, 0x00, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00]);
+        let mut mock_socket = MockSocket::new(vec![0x01, 0x11, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00]);
         handler(&mut mock_socket, Arc::new(server)).await.ok();
-        println!("{:?}", mock_socket.output);
+        // OP_REP_DEVLIST
+        assert_eq!(
+            mock_socket.output,
+            [0x01, 0x11, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
     }
 }
