@@ -320,7 +320,7 @@ impl UsbDevice {
                             _ => {
                                 warn!("unknown desc type");
                                 return Ok(vec![]);
-                            },
+                            }
                         }
                     }
                     _ if setup_packet.request_type & 0xF == 1 => {

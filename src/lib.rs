@@ -41,7 +41,7 @@ impl UsbIpServer {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {
             for dev in list.iter() {
-                let handle = dev.open().unwrap();
+                let handle = Arc::new(dev.open().unwrap());
                 let desc = dev.device_descriptor().unwrap();
                 let cfg = dev.active_config_descriptor().unwrap();
                 let mut interfaces = vec![];
@@ -59,9 +59,9 @@ impl UsbIpServer {
                         });
                     }
 
-                    let handler = Arc::new(Mutex::new(
-                        Box::new(UsbHostHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
-                    ));
+                    let handler =
+                        Arc::new(Mutex::new(Box::new(UsbHostHandler::new(handle.clone()))
+                            as Box<dyn UsbInterfaceHandler + Send>));
                     interfaces.push(UsbInterface {
                         interface_class: intf_desc.class_code(),
                         interface_subclass: intf_desc.sub_class_code(),
@@ -113,13 +113,16 @@ impl UsbIpServer {
 
                 // set strings
                 if let Some(index) = desc.manufacturer_string_index() {
-                    device.string_manufacturer = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_manufacturer =
+                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
                 }
                 if let Some(index) = desc.product_string_index() {
-                    device.string_product = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_product =
+                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
                 }
                 if let Some(index) = desc.serial_number_string_index() {
-                    device.string_serial = device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_serial =
+                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
                 }
                 devices.push(device);
             }
