@@ -19,12 +19,14 @@ mod consts;
 mod device;
 mod endpoint;
 pub mod hid;
+mod host;
 mod interface;
 mod setup;
 mod util;
 pub use consts::*;
 pub use device::*;
 pub use endpoint::*;
+pub use host::*;
 pub use interface::*;
 pub use setup::*;
 pub use util::*;
@@ -40,6 +42,35 @@ impl UsbIpServer {
         if let Ok(list) = rusb::devices() {
             for dev in list.iter() {
                 let desc = dev.device_descriptor().unwrap();
+                let cfg = dev.active_config_descriptor().unwrap();
+                let mut interfaces = vec![];
+                for intf in cfg.interfaces() {
+                    // ignore alternate settings
+                    let intf_desc = intf.descriptors().next().unwrap();
+                    let mut endpoints = vec![];
+
+                    for ep_desc in intf_desc.endpoint_descriptors() {
+                        endpoints.push(UsbEndpoint {
+                            address: ep_desc.address(),
+                            attributes: ep_desc.transfer_type() as u8,
+                            max_packet_size: ep_desc.max_packet_size(),
+                            interval: ep_desc.interval(),
+                        });
+                    }
+
+                    let handler = Arc::new(Mutex::new(
+                        Box::new(UsbHostHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+                    ));
+                    interfaces.push(UsbInterface {
+                        interface_class: intf_desc.class_code(),
+                        interface_subclass: intf_desc.sub_class_code(),
+                        interface_protocol: intf_desc.protocol_code(),
+                        endpoints,
+                        string_interface: intf_desc.description_string_index().unwrap_or(0),
+                        class_specific_descriptor: Vec::from(intf_desc.extra().unwrap_or(&[])),
+                        handler,
+                    });
+                }
                 devices.push(UsbDevice {
                     path: format!(
                         "/sys/bus/{}/{}/{}",
@@ -61,6 +92,7 @@ impl UsbIpServer {
                     device_class: desc.class_code(),
                     device_subclass: desc.sub_class_code(),
                     device_protocol: desc.protocol_code(),
+                    configuration_value: cfg.number(),
                     num_configurations: desc.num_configurations(),
                     ep0_in: UsbEndpoint {
                         address: 0x80,
