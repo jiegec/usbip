@@ -190,12 +190,12 @@ impl UsbDevice {
                                     0x12,         // bLength
                                     Device as u8, // bDescriptorType: Device
                                     0x10,
-                                    0x02,                      // bcdUSB: USB 2.1
-                                    self.device_class,         // bDeviceClass
-                                    self.device_subclass,      // bDeviceSubClass
-                                    self.device_protocol,      // bDeviceProtocol
+                                    0x02,                              // bcdUSB: USB 2.1
+                                    self.device_class,                 // bDeviceClass
+                                    self.device_subclass,              // bDeviceSubClass
+                                    self.device_protocol,              // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
-                                    self.vendor_id as u8,      // idVendor
+                                    self.vendor_id as u8,              // idVendor
                                     (self.vendor_id >> 8) as u8,
                                     self.product_id as u8, // idProduct
                                     (self.product_id >> 8) as u8,
@@ -320,15 +320,16 @@ impl UsbDevice {
                             Some(DeviceQualifier) => {
                                 debug!("Get device qualifier descriptor");
                                 let mut desc = vec![
-                                    0x0A,      // bLength
+                                    0x0A,                  // bLength
                                     DeviceQualifier as u8, // bDescriptorType: Device Qualifier
-                                    0x10, 0x02, // bcdUSB USB 2.1
-                                    self.device_class, // bDeviceClass
-                                    self.device_subclass, // bDeviceSUbClass
-                                    self.device_protocol, // bDeviceProtocol
+                                    0x10,
+                                    0x02,                              // bcdUSB USB 2.1
+                                    self.device_class,                 // bDeviceClass
+                                    self.device_subclass,              // bDeviceSUbClass
+                                    self.device_protocol,              // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
-                                    self.num_configurations, // bNumConfigurations
-                                    0x00, // reserved
+                                    self.num_configurations,           // bNumConfigurations
+                                    0x00,                              // reserved
                                 ];
 
                                 // requested len too short: wLength < real length
