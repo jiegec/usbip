@@ -4,11 +4,11 @@ use super::*;
 /// A handler of a CDC ACM
 #[derive(Clone)]
 pub struct UsbHostHandler {
-    handle: Arc<DeviceHandle<GlobalContext>>,
+    handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }
 
 impl UsbHostHandler {
-    pub fn new(handle: Arc<DeviceHandle<GlobalContext>>) -> Self {
+    pub fn new(handle: Arc<Mutex<DeviceHandle<GlobalContext>>>) -> Self {
         Self { handle }
     }
 }
@@ -27,11 +27,12 @@ impl UsbInterfaceHandler for UsbHostHandler {
         );
         let mut buffer = [0u8; 1024];
         let timeout = std::time::Duration::new(1, 0);
+        let handle = self.handle.lock().unwrap();
         if ep.attributes == EndpointAttributes::Control as u8 {
             // control
             if let Direction::In = ep.direction() {
                 // control in
-                if let Ok(len) = self.handle.read_control(
+                if let Ok(len) = handle.read_control(
                     setup.request_type,
                     setup.request,
                     setup.value,
@@ -43,7 +44,7 @@ impl UsbInterfaceHandler for UsbHostHandler {
                 }
             } else {
                 // control out
-                self.handle
+                handle
                     .write_control(
                         setup.request_type,
                         setup.request,
@@ -58,23 +59,24 @@ impl UsbInterfaceHandler for UsbHostHandler {
             // interrupt
             if let Direction::In = ep.direction() {
                 // interrupt in
-                if let Ok(len) = self.handle.read_interrupt(ep.address, &mut buffer, timeout) {
+                if let Ok(len) = handle.read_interrupt(ep.address, &mut buffer, timeout) {
+                    info!("intr in {:?}", &buffer[..len]);
                     return Ok(Vec::from(&buffer[..len]));
                 }
             } else {
                 // interrupt out
-                self.handle.write_interrupt(ep.address, req, timeout).ok();
+                handle.write_interrupt(ep.address, req, timeout).ok();
             }
         } else if ep.attributes == EndpointAttributes::Bulk as u8 {
             // bulk
             if let Direction::In = ep.direction() {
                 // bulk in
-                if let Ok(len) = self.handle.read_bulk(ep.address, &mut buffer, timeout) {
+                if let Ok(len) = handle.read_bulk(ep.address, &mut buffer, timeout) {
                     return Ok(Vec::from(&buffer[..len]));
                 }
             } else {
                 // bulk out
-                self.handle.write_bulk(ep.address, req, timeout).ok();
+                handle.write_bulk(ep.address, req, timeout).ok();
             }
         }
         Ok(vec![])

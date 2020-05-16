@@ -41,13 +41,17 @@ impl UsbIpServer {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {
             for dev in list.iter() {
-                let handle = Arc::new(dev.open().unwrap());
+                let mut handle = Arc::new(Mutex::new(dev.open().unwrap()));
                 let desc = dev.device_descriptor().unwrap();
                 let cfg = dev.active_config_descriptor().unwrap();
                 let mut interfaces = vec![];
                 for intf in cfg.interfaces() {
                     // ignore alternate settings
                     let intf_desc = intf.descriptors().next().unwrap();
+                    handle
+                        .lock()
+                        .unwrap()
+                        .claim_interface(intf_desc.interface_number()).ok();
                     let mut endpoints = vec![];
 
                     for ep_desc in intf_desc.endpoint_descriptors() {
@@ -113,16 +117,31 @@ impl UsbIpServer {
 
                 // set strings
                 if let Some(index) = desc.manufacturer_string_index() {
-                    device.string_manufacturer =
-                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_manufacturer = device.new_string(
+                        &handle
+                            .lock()
+                            .unwrap()
+                            .read_string_descriptor_ascii(index)
+                            .unwrap(),
+                    )
                 }
                 if let Some(index) = desc.product_string_index() {
-                    device.string_product =
-                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_product = device.new_string(
+                        &handle
+                            .lock()
+                            .unwrap()
+                            .read_string_descriptor_ascii(index)
+                            .unwrap(),
+                    )
                 }
                 if let Some(index) = desc.serial_number_string_index() {
-                    device.string_serial =
-                        device.new_string(&handle.read_string_descriptor_ascii(index).unwrap())
+                    device.string_serial = device.new_string(
+                        &handle
+                            .lock()
+                            .unwrap()
+                            .read_string_descriptor_ascii(index)
+                            .unwrap(),
+                    )
                 }
                 devices.push(device);
             }

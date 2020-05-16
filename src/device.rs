@@ -194,7 +194,7 @@ impl UsbDevice {
                                     self.device_class,         // bDeviceClass
                                     self.device_subclass,      // bDeviceSubClass
                                     self.device_protocol,      // bDeviceProtocol
-                                    EP0_MAX_PACKET_SIZE as u8, // bMaxPacketSize0
+                                    self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
                                     self.vendor_id as u8,      // idVendor
                                     (self.vendor_id >> 8) as u8,
                                     self.product_id as u8, // idProduct
@@ -317,8 +317,28 @@ impl UsbDevice {
                                     return Ok(desc);
                                 }
                             }
+                            Some(DeviceQualifier) => {
+                                debug!("Get device qualifier descriptor");
+                                let mut desc = vec![
+                                    0x0A,      // bLength
+                                    DeviceQualifier as u8, // bDescriptorType: Device Qualifier
+                                    0x10, 0x02, // bcdUSB USB 2.1
+                                    self.device_class, // bDeviceClass
+                                    self.device_subclass, // bDeviceSUbClass
+                                    self.device_protocol, // bDeviceProtocol
+                                    self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
+                                    self.num_configurations, // bNumConfigurations
+                                    0x00, // reserved
+                                ];
+
+                                // requested len too short: wLength < real length
+                                if setup_packet.length < desc.len() as u16 {
+                                    desc.resize(setup_packet.length as usize, 0);
+                                }
+                                return Ok(desc);
+                            }
                             _ => {
-                                warn!("unknown desc type");
+                                warn!("unknown desc type: {:x?}", setup_packet);
                                 return Ok(vec![]);
                             }
                         }
