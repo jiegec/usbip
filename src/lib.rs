@@ -33,10 +33,16 @@ pub use util::*;
 
 /// Main struct of a USB/IP server
 pub struct UsbIpServer {
-    pub devices: Vec<UsbDevice>,
+    devices: Vec<UsbDevice>,
 }
 
 impl UsbIpServer {
+    /// Create a `UsbIpServer` with simulated devices
+    pub fn new_simulated(devices: Vec<UsbDevice>) -> Self {
+        Self { devices }
+    }
+
+    /// Create a `UsbIpServer` exposing devices in the host, and redirect all USB transfers to them using libusb
     pub fn new_from_host() -> Self {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {

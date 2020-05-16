@@ -11,6 +11,7 @@ pub(crate) async fn socket_write_fixed_string<T: AsyncReadExt + AsyncWriteExt + 
     socket.write_all(&path).await
 }
 
+/// Check validity of a USB descriptor
 pub fn verify_descriptor(desc: &[u8]) {
     let mut offset = 0;
     while offset < desc.len() {
