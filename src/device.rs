@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct UsbDevice {
     pub path: String,
     pub bus_id: String,
@@ -64,9 +64,10 @@ impl UsbDevice {
         interface_protocol: u8,
         name: &str,
         endpoints: Vec<UsbEndpoint>,
-        class_specific_descriptor: Vec<u8>,
+        handler: Box<dyn UsbInterfaceHandler + Send>,
     ) -> Self {
         let string_interface = self.new_string(name);
+        let class_specific_descriptor = handler.get_class_specific_descriptor();
         self.interfaces.push(UsbInterface {
             interface_class,
             interface_subclass,
@@ -74,6 +75,7 @@ impl UsbDevice {
             endpoints,
             string_interface,
             class_specific_descriptor,
+            handler: Arc::new(Mutex::new(handler)),
         });
         self
     }
@@ -88,16 +90,16 @@ impl UsbDevice {
         panic!("string poll exhausted")
     }
 
-    pub(crate) fn find_ep(&self, ep: u8) -> Option<UsbEndpoint> {
+    pub(crate) fn find_ep(&self, ep: u8) -> Option<(UsbEndpoint, Option<&UsbInterface>)> {
         if ep == self.ep0_in.address {
-            Some(self.ep0_in)
+            Some((self.ep0_in, None))
         } else if ep == self.ep0_out.address {
-            Some(self.ep0_out)
+            Some((self.ep0_out, None))
         } else {
             for intf in &self.interfaces {
                 for endpoint in &intf.endpoints {
                     if endpoint.address == ep {
-                        return Some(*endpoint);
+                        return Some((*endpoint, Some(intf)));
                     }
                 }
             }
@@ -143,6 +145,7 @@ impl UsbDevice {
         &self,
         socket: &mut TcpStream,
         ep: UsbEndpoint,
+        intf: Option<&UsbInterface>,
         transfer_buffer_length: u32,
         setup: [u8; 8],
     ) -> Result<Vec<u8>> {
@@ -152,20 +155,28 @@ impl UsbDevice {
         use StandardRequest::*;
 
         // parse setup
-        let request_type = setup[0];
-        let request = setup[1];
-        let value = (setup[3] as u16) << 8 | (setup[2] as u16);
-        let index = (setup[5] as u16) << 8 | (setup[4] as u16);
-        let length = (setup[7] as u16) << 8 | (setup[6] as u16);
+        let setup_packet = SetupPacket::parse(&setup);
+
+        // read data from socket for OUT
+        let out_data = if let Out = ep.direction() {
+            let mut data = vec![0u8; transfer_buffer_length as usize];
+            socket.read_exact(&mut data).await?;
+            data
+        } else {
+            vec![]
+        };
 
         match (FromPrimitive::from_u8(ep.attributes), ep.direction()) {
             (Some(Control), In) => {
                 // control in
-                debug!("Control IN bmRequestType={:b} bRequest={:x} wValue={:x} wIndex={:x} wLength={:x}", request_type, request, value, index, length);
-                match (request_type, FromPrimitive::from_u8(request)) {
+                debug!("Control IN setup={:x?}", setup_packet);
+                match (
+                    setup_packet.request_type,
+                    FromPrimitive::from_u8(setup_packet.request),
+                ) {
                     (0b10000000, Some(GetDescriptor)) => {
                         // high byte: type
-                        match FromPrimitive::from_u16(value >> 8) {
+                        match FromPrimitive::from_u16(setup_packet.value >> 8) {
                             Some(Device) => {
                                 debug!("Get device descriptor");
                                 let mut desc = vec![
@@ -190,8 +201,8 @@ impl UsbDevice {
                                 ];
 
                                 // requested len too short: wLength < real length
-                                if length < desc.len() as u16 {
-                                    desc.resize(length as usize, 0);
+                                if setup_packet.length < desc.len() as u16 {
+                                    desc.resize(setup_packet.length as usize, 0);
                                 }
                                 return Ok(desc);
                             }
@@ -205,8 +216,8 @@ impl UsbDevice {
                                 ];
 
                                 // requested len too short: wLength < real length
-                                if length < desc.len() as u16 {
-                                    desc.resize(length as usize, 0);
+                                if setup_packet.length < desc.len() as u16 {
+                                    desc.resize(setup_packet.length as usize, 0);
                                 }
                                 return Ok(desc);
                             }
@@ -259,13 +270,13 @@ impl UsbDevice {
                                 desc[3] = (len >> 8) as u8;
 
                                 // requested len too short: wLength < real length
-                                if length < desc.len() as u16 {
-                                    desc.resize(length as usize, 0);
+                                if setup_packet.length < desc.len() as u16 {
+                                    desc.resize(setup_packet.length as usize, 0);
                                 }
                                 return Ok(desc);
                             }
                             Some(String) => {
-                                let index = value as u8;
+                                let index = setup_packet.value as u8;
                                 if index == 0 {
                                     // language ids
                                     let mut desc = vec![
@@ -275,8 +286,8 @@ impl UsbDevice {
                                         0x04, // bLANGID, en-US
                                     ];
                                     // requested len too short: wLength < real length
-                                    if length < desc.len() as u16 {
-                                        desc.resize(length as usize, 0);
+                                    if setup_packet.length < desc.len() as u16 {
+                                        desc.resize(setup_packet.length as usize, 0);
                                     }
                                     return Ok(desc);
                                 } else {
@@ -292,8 +303,8 @@ impl UsbDevice {
                                     }
 
                                     // requested len too short: wLength < real length
-                                    if length < desc.len() as u16 {
-                                        desc.resize(length as usize, 0);
+                                    if setup_packet.length < desc.len() as u16 {
+                                        desc.resize(setup_packet.length as usize, 0);
                                     }
                                     return Ok(desc);
                                 }
@@ -301,8 +312,26 @@ impl UsbDevice {
                             _ => unimplemented!("desc type"),
                         }
                     }
+                    _ if setup_packet.request_type & 0xF == 1 => {
+                        // to interface
+                        let intf = &self.interfaces[setup_packet.index as usize];
+                        let mut handler = intf.handler.lock().unwrap();
+                        let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
+                        return Ok(resp);
+                    }
                     _ => unimplemented!("control in"),
                 }
+            }
+            (Some(Control), Out) => {
+                // control out
+                debug!("Control OUT setup={:x?}", setup_packet);
+            }
+            (Some(Interrupt), In) => {
+                // interrupt in
+                let intf = intf.unwrap();
+                let mut handler = intf.handler.lock().unwrap();
+                let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
+                return Ok(resp);
             }
             _ => unimplemented!("transfer to {:?}", ep),
         }

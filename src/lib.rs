@@ -5,7 +5,7 @@ use num_traits::FromPrimitive;
 use std::collections::HashMap;
 use std::io::Result;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -13,12 +13,16 @@ use tokio::net::{TcpListener, TcpStream};
 mod consts;
 mod device;
 mod endpoint;
+mod hid;
 mod interface;
+mod setup;
 mod util;
 pub use consts::*;
 pub use device::*;
 pub use endpoint::*;
+pub use hid::*;
 pub use interface::*;
+pub use setup::*;
 pub use util::*;
 
 pub struct UsbIpServer {
@@ -85,11 +89,11 @@ async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> 
                 socket.read_exact(&mut setup).await?;
                 let device = current_import_device.unwrap();
                 let real_ep = if direction == 0 { ep } else { ep | 0x80 };
-                let usb_ep = device.find_ep(real_ep as u8).unwrap();
+                let (usb_ep, intf) = device.find_ep(real_ep as u8).unwrap();
                 debug!("->Endpoint {:02x?}", usb_ep);
                 debug!("->Setup {:02x?}", setup);
                 let resp = device
-                    .handle_urb(&mut socket, usb_ep, transfer_buffer_length, setup)
+                    .handle_urb(&mut socket, usb_ep, intf, transfer_buffer_length, setup)
                     .await?;
                 debug!("<-Resp {:02x?}", resp);
 

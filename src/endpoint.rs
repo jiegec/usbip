@@ -16,4 +16,8 @@ impl UsbEndpoint {
             Direction::Out
         }
     }
+
+    pub fn is_ep0(&self) -> bool {
+        self.address & 0x7F == 0
+    }
 }

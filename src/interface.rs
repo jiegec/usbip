@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone)]
 pub struct UsbInterface {
     pub interface_class: u8,
     pub interface_subclass: u8,
@@ -8,4 +8,17 @@ pub struct UsbInterface {
     pub endpoints: Vec<UsbEndpoint>,
     pub string_interface: u8,
     pub class_specific_descriptor: Vec<u8>,
+    pub handler: Arc<Mutex<Box<dyn UsbInterfaceHandler + Send>>>,
+}
+
+pub trait UsbInterfaceHandler {
+    fn get_class_specific_descriptor(&self) -> Vec<u8>;
+
+    fn handle_urb(
+        &mut self,
+        interface: &UsbInterface,
+        ep: UsbEndpoint,
+        setup: SetupPacket,
+        req: &[u8],
+    ) -> Result<Vec<u8>>;
 }
