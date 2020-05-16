@@ -96,3 +96,15 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desc_verify() {
+        let handler = UsbCdcAcmHandler::new();
+        verify_descriptor(&handler.get_class_specific_descriptor());
+    }
+
+}

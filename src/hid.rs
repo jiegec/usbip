@@ -159,3 +159,15 @@ pub enum HidDescriptorType {
     Report = 0x22,
     Physical = 0x23,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desc_verify() {
+        let handler = UsbHidKeyboardHandler::new_keyboard();
+        verify_descriptor(&handler.get_class_specific_descriptor());
+    }
+
+}

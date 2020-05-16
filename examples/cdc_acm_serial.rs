@@ -33,7 +33,7 @@ async fn main() {
             .downcast_mut::<usbip::cdc::UsbCdcAcmHandler>()
         {
             acm.tx_buffer.push(b'a');
-            info!("Simulate a key event");
+            info!("Simulate a char input");
         }
     }
 }

@@ -33,7 +33,10 @@ pub struct UsbIpServer {
     pub devices: Vec<UsbDevice>,
 }
 
-async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> {
+async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
+    mut socket: T,
+    server: Arc<UsbIpServer>,
+) -> Result<()> {
     let mut current_import_device = None;
     loop {
         let mut command = [0u8; 4];

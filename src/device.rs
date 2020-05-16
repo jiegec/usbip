@@ -108,7 +108,10 @@ impl UsbDevice {
         }
     }
 
-    pub(crate) async fn write_dev(&self, socket: &mut TcpStream) -> Result<()> {
+    pub(crate) async fn write_dev<T: AsyncReadExt + AsyncWriteExt + Unpin>(
+        &self,
+        socket: &mut T,
+    ) -> Result<()> {
         socket_write_fixed_string(socket, &self.path, 256).await?;
         socket_write_fixed_string(socket, &self.bus_id, 32).await?;
 
@@ -129,7 +132,10 @@ impl UsbDevice {
         Ok(())
     }
 
-    pub(crate) async fn write_dev_with_interfaces(&self, socket: &mut TcpStream) -> Result<()> {
+    pub(crate) async fn write_dev_with_interfaces<T: AsyncReadExt + AsyncWriteExt + Unpin>(
+        &self,
+        socket: &mut T,
+    ) -> Result<()> {
         self.write_dev(socket).await?;
 
         for interface in &self.interfaces {
@@ -142,9 +148,9 @@ impl UsbDevice {
         Ok(())
     }
 
-    pub(crate) async fn handle_urb(
+    pub(crate) async fn handle_urb<T: AsyncReadExt + AsyncWriteExt + Unpin>(
         &self,
-        socket: &mut TcpStream,
+        socket: &mut T,
         ep: UsbEndpoint,
         intf: Option<&UsbInterface>,
         transfer_buffer_length: u32,
