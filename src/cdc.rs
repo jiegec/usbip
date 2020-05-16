@@ -106,5 +106,4 @@ mod tests {
         let handler = UsbCdcAcmHandler::new();
         verify_descriptor(&handler.get_class_specific_descriptor());
     }
-
 }

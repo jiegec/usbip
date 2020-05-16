@@ -34,7 +34,7 @@ pub struct UsbIpServer {
 }
 
 async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-    mut socket: T,
+    mut socket: &mut T,
     server: Arc<UsbIpServer>,
 ) -> Result<()> {
     let mut current_import_device = None;
@@ -100,7 +100,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 debug!("->Endpoint {:02x?}", usb_ep);
                 debug!("->Setup {:02x?}", setup);
                 let resp = device
-                    .handle_urb(&mut socket, usb_ep, intf, transfer_buffer_length, setup)
+                    .handle_urb(socket, usb_ep, intf, transfer_buffer_length, setup)
                     .await?;
                 debug!("<-Resp {:02x?}", resp);
 
@@ -143,11 +143,11 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
         let mut incoming = listener.incoming();
         while let Some(socket_res) = incoming.next().await {
             match socket_res {
-                Ok(socket) => {
+                Ok(mut socket) => {
                     info!("Got connection from {:?}", socket.peer_addr());
                     let new_server = usbip_server.clone();
                     tokio::spawn(async move {
-                        let res = handler(socket, new_server).await;
+                        let res = handler(&mut socket, new_server).await;
                         info!("Handler ended with {:?}", res);
                     });
                 }
@@ -159,4 +159,80 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
     };
 
     server.await
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::{
+        io::*,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+    use tokio::io::{AsyncRead, AsyncWrite};
+
+    pub struct MockSocket {
+        input: Cursor<Vec<u8>>,
+        output: Vec<u8>,
+    }
+
+    impl MockSocket {
+        pub fn new(input: Vec<u8>) -> Self {
+            Self {
+                input: Cursor::new(input),
+                output: vec![],
+            }
+        }
+    }
+
+    impl AsyncRead for MockSocket {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context,
+            buf: &mut [u8],
+        ) -> Poll<Result<usize>> {
+            Poll::Ready(std::io::Read::read(&mut self.get_mut().input, buf))
+        }
+    }
+
+    impl AsyncWrite for MockSocket {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<Result<usize>> {
+            self.get_mut().output.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn req_devlist() {
+        let intf_handler = Arc::new(Mutex::new(
+            Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let server = UsbIpServer {
+            devices: vec![UsbDevice::new(0).with_interface(
+                ClassCode::CDC as u8,
+                cdc::CDC_ACM_SUBCLASS,
+                0x00,
+                "Test CDC ACM",
+                cdc::UsbCdcAcmHandler::endpoints(),
+                intf_handler.clone(),
+            )],
+        };
+
+        // OP_REQ_DEVLIST
+        let mut mock_socket = MockSocket::new(vec![0x01, 0x00, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00]);
+        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        println!("{:?}", mock_socket.output);
+    }
 }

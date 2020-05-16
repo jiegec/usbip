@@ -169,5 +169,4 @@ mod tests {
         let handler = UsbHidKeyboardHandler::new_keyboard();
         verify_descriptor(&handler.get_class_specific_descriptor());
     }
-
 }
