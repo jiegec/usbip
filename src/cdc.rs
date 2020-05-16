@@ -44,12 +44,11 @@ impl UsbCdcAcmHandler {
 impl UsbInterfaceHandler for UsbCdcAcmHandler {
     fn handle_urb(
         &mut self,
-        interface: &UsbInterface,
+        _interface: &UsbInterface,
         ep: UsbEndpoint,
-        setup: SetupPacket,
+        _setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>> {
-        use StandardRequest::*;
         if ep.attributes == EndpointAttributes::Interrupt as u8 {
             // interrupt
             if let Direction::In = ep.direction() {

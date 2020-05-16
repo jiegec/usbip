@@ -87,10 +87,10 @@ impl UsbHidKeyboardHandler {
 impl UsbInterfaceHandler for UsbHidKeyboardHandler {
     fn handle_urb(
         &mut self,
-        interface: &UsbInterface,
+        _interface: &UsbInterface,
         ep: UsbEndpoint,
         setup: SetupPacket,
-        req: &[u8],
+        _req: &[u8],
     ) -> Result<Vec<u8>> {
         use StandardRequest::*;
         if ep.is_ep0() {

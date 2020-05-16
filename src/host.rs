@@ -16,12 +16,11 @@ impl UsbHostHandler {
 impl UsbInterfaceHandler for UsbHostHandler {
     fn handle_urb(
         &mut self,
-        interface: &UsbInterface,
+        _interface: &UsbInterface,
         ep: UsbEndpoint,
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>> {
-        use StandardRequest::*;
         debug!(
             "To host device: ep={:?} setup={:?} req={:?}",
             ep, setup, req

@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 
 pub mod cdc;
 mod consts;
@@ -185,11 +185,11 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 let dev_id = socket.read_u32().await?;
                 let direction = socket.read_u32().await?;
                 let ep = socket.read_u32().await?;
-                let transfer_flags = socket.read_u32().await?;
+                let _transfer_flags = socket.read_u32().await?;
                 let transfer_buffer_length = socket.read_u32().await?;
-                let start_frame = socket.read_u32().await?;
-                let number_of_packets = socket.read_u32().await?;
-                let interval = socket.read_u32().await?;
+                let _start_frame = socket.read_u32().await?;
+                let _number_of_packets = socket.read_u32().await?;
+                let _interval = socket.read_u32().await?;
                 let mut setup = [0u8; 8];
                 socket.read_exact(&mut setup).await?;
                 let device = current_import_device.unwrap();
