@@ -32,18 +32,28 @@ impl UsbInterfaceHandler for UsbHostHandler {
             // control
             if let Direction::In = ep.direction() {
                 // control in
-                let len = self
-                    .handle
-                    .read_control(
+                if let Ok(len) = self.handle.read_control(
+                    setup.request_type,
+                    setup.request,
+                    setup.value,
+                    setup.index,
+                    &mut buffer,
+                    timeout,
+                ) {
+                    return Ok(Vec::from(&buffer[..len]));
+                }
+            } else {
+                // control out
+                self.handle
+                    .write_control(
                         setup.request_type,
                         setup.request,
                         setup.value,
                         setup.index,
-                        &mut buffer,
+                        req,
                         timeout,
                     )
-                    .unwrap();
-                return Ok(Vec::from(&buffer[..len]));
+                    .ok();
             }
         } else if ep.attributes == EndpointAttributes::Interrupt as u8 {
             // interrupt
@@ -52,6 +62,20 @@ impl UsbInterfaceHandler for UsbHostHandler {
                 if let Ok(len) = self.handle.read_interrupt(ep.address, &mut buffer, timeout) {
                     return Ok(Vec::from(&buffer[..len]));
                 }
+            } else {
+                // interrupt out
+                self.handle.write_interrupt(ep.address, req, timeout).ok();
+            }
+        } else if ep.attributes == EndpointAttributes::Bulk as u8 {
+            // bulk
+            if let Direction::In = ep.direction() {
+                // bulk in
+                if let Ok(len) = self.handle.read_bulk(ep.address, &mut buffer, timeout) {
+                    return Ok(Vec::from(&buffer[..len]));
+                }
+            } else {
+                // bulk out
+                self.handle.write_bulk(ep.address, req, timeout).ok();
             }
         }
         Ok(vec![])

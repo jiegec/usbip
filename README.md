@@ -6,10 +6,11 @@ A Rust library to run a USB/IP server to simulate USB devices.
 
 ## How to use
 
-See examples directory. Two examples are provided:
+See examples directory. Three examples are provided:
 
-1. hid_keyboard.rs: simulate a hid keyboard that types something every second.
-2. cdc_acm_serial.rs : simulate a serial that gets a character every second.
+1. hid_keyboard: Simulate a hid keyboard that types something every second.
+2. cdc_acm_serial: Simulate a serial that gets a character every second.
+3. host: Act like original usb/ip sharing server, sharing one device from one machine to another. Also supports sharing from macOS to Linux!
 
 To run example, run:
 
