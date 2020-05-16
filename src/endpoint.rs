@@ -3,9 +3,13 @@ use super::*;
 /// Represent a USB endpoint
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UsbEndpoint {
+    /// bEndpointAddress
     pub address: u8,
+    /// bmAttributes
     pub attributes: u8,
+    /// wMaxPacketSize
     pub max_packet_size: u16,
+    /// bInterval
     pub interval: u8,
 }
 

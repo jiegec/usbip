@@ -17,14 +17,14 @@ pub struct UsbDevice {
     pub configuration_value: u8,
     pub num_configurations: u8,
     pub interfaces: Vec<UsbInterface>,
-    pub ep0_in: UsbEndpoint,
-    pub ep0_out: UsbEndpoint,
+    pub(crate) ep0_in: UsbEndpoint,
+    pub(crate) ep0_out: UsbEndpoint,
     // strings
-    pub string_pool: HashMap<u8, String>,
-    pub string_configuration: u8,
-    pub string_manufacturer: u8,
-    pub string_product: u8,
-    pub string_serial: u8,
+    pub(crate) string_pool: HashMap<u8, String>,
+    pub(crate) string_configuration: u8,
+    pub(crate) string_manufacturer: u8,
+    pub(crate) string_product: u8,
+    pub(crate) string_serial: u8,
 }
 
 impl UsbDevice {

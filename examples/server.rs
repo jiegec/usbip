@@ -8,7 +8,7 @@ use usbip;
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let handler = Arc::new(Mutex::new(Box::new(usbip::hid::UsbHidHandler::new_keyboard())
+    let handler = Arc::new(Mutex::new(Box::new(usbip::hid::UsbHidKeyboardHandler::new_keyboard())
         as Box<dyn usbip::UsbInterfaceHandler + Send>));
     let server = usbip::UsbIpServer {
         devices: vec![usbip::UsbDevice::new(0).with_interface(
@@ -32,9 +32,9 @@ async fn main() {
         // sleep 1s
         tokio::time::delay_for(Duration::new(1, 0)).await;
         let mut handler = handler.lock().unwrap();
-        if let Some(hid) = handler.as_any().downcast_mut::<usbip::hid::UsbHidHandler>() {
+        if let Some(hid) = handler.as_any().downcast_mut::<usbip::hid::UsbHidKeyboardHandler>() {
             hid.pending_key_events
-                .push_back(usbip::hid::UsbHidReportKeyboard::from_ascii(b'1'));
+                .push_back(usbip::hid::UsbHidKeyboardReport::from_ascii(b'1'));
             info!("Simulate a key event");
         }
     }
