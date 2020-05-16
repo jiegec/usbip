@@ -4,6 +4,7 @@ use futures::stream::StreamExt;
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use rusb::*;
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
 use std::io::Result;
@@ -31,6 +32,54 @@ pub use util::*;
 /// Main struct of a USB/IP server
 pub struct UsbIpServer {
     pub devices: Vec<UsbDevice>,
+}
+
+impl UsbIpServer {
+    pub fn new_from_host() -> Self {
+        let mut devices = vec![];
+        if let Ok(list) = rusb::devices() {
+            for dev in list.iter() {
+                let desc = dev.device_descriptor().unwrap();
+                devices.push(UsbDevice {
+                    path: format!(
+                        "/sys/bus/{}/{}/{}",
+                        dev.bus_number(),
+                        dev.address(),
+                        dev.port_number()
+                    ),
+                    bus_id: format!(
+                        "{}-{}-{}",
+                        dev.bus_number(),
+                        dev.address(),
+                        dev.port_number()
+                    ),
+                    bus_num: dev.bus_number() as u32,
+                    dev_num: dev.port_number() as u32,
+                    speed: dev.speed() as u32,
+                    vendor_id: desc.vendor_id(),
+                    product_id: desc.product_id(),
+                    device_class: desc.class_code(),
+                    device_subclass: desc.sub_class_code(),
+                    device_protocol: desc.protocol_code(),
+                    num_configurations: desc.num_configurations(),
+                    ep0_in: UsbEndpoint {
+                        address: 0x80,
+                        attributes: EndpointAttributes::Control as u8,
+                        max_packet_size: desc.max_packet_size() as u16,
+                        interval: 0,
+                    },
+                    ep0_out: UsbEndpoint {
+                        address: 0x00,
+                        attributes: EndpointAttributes::Control as u8,
+                        max_packet_size: desc.max_packet_size() as u16,
+                        interval: 0,
+                    },
+                    ..UsbDevice::default()
+                });
+            }
+        }
+        Self { devices }
+    }
 }
 
 async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
