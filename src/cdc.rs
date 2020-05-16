@@ -3,13 +3,13 @@ use super::*;
 
 /// A handler of a CDC ACM
 #[derive(Clone)]
-pub struct UsbCDCACMHandler {
+pub struct UsbCdcAcmHandler {
     pub tx_buffer: Vec<u8>,
 }
 
 pub const CDC_ACM_SUBCLASS: u8 = 0x02;
 
-impl UsbCDCACMHandler {
+impl UsbCdcAcmHandler {
     pub fn new() -> Self {
         Self { tx_buffer: vec![] }
     }
@@ -41,7 +41,7 @@ impl UsbCDCACMHandler {
     }
 }
 
-impl UsbInterfaceHandler for UsbCDCACMHandler {
+impl UsbInterfaceHandler for UsbCdcAcmHandler {
     fn handle_urb(
         &mut self,
         interface: &UsbInterface,

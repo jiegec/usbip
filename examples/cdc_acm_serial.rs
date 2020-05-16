@@ -9,7 +9,7 @@ use usbip;
 async fn main() {
     env_logger::init();
     let handler =
-        Arc::new(Mutex::new(Box::new(usbip::cdc::UsbCDCACMHandler::new())
+        Arc::new(Mutex::new(Box::new(usbip::cdc::UsbCdcAcmHandler::new())
             as Box<dyn usbip::UsbInterfaceHandler + Send>));
     let server = usbip::UsbIpServer {
         devices: vec![usbip::UsbDevice::new(0).with_interface(
@@ -17,7 +17,7 @@ async fn main() {
             usbip::cdc::CDC_ACM_SUBCLASS,
             0x00,
             "Test CDC ACM",
-            usbip::cdc::UsbCDCACMHandler::endpoints(),
+            usbip::cdc::UsbCdcAcmHandler::endpoints(),
             handler.clone(),
         )],
     };
@@ -30,7 +30,7 @@ async fn main() {
         let mut handler = handler.lock().unwrap();
         if let Some(acm) = handler
             .as_any()
-            .downcast_mut::<usbip::cdc::UsbCDCACMHandler>()
+            .downcast_mut::<usbip::cdc::UsbCdcAcmHandler>()
         {
             acm.tx_buffer.push(b'a');
             info!("Simulate a key event");
