@@ -1,12 +1,13 @@
-//! CDC
+//! Implement CDC(Communications) device
 use super::*;
 
-/// A handler of a CDC ACM
+/// A handler of a CDC ACM(Abstract Control Model)
 #[derive(Clone)]
 pub struct UsbCdcAcmHandler {
     pub tx_buffer: Vec<u8>,
 }
 
+/// Sub class code for CDC ACM
 pub const CDC_ACM_SUBCLASS: u8 = 0x02;
 
 impl UsbCdcAcmHandler {

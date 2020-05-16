@@ -3,14 +3,20 @@ use super::*;
 /// Parse the SETUP packet of control transfers
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SetupPacket {
+    /// bmRequestType
     pub request_type: u8,
+    /// bRequest
     pub request: u8,
+    /// wValue
     pub value: u16,
+    /// wIndex
     pub index: u16,
+    /// wLength
     pub length: u16,
 }
 
 impl SetupPacket {
+    /// Parse a [SetupPacket] from raw setup packet
     pub fn parse(setup: &[u8; 8]) -> SetupPacket {
         SetupPacket {
             request_type: setup[0],

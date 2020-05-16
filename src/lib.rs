@@ -37,12 +37,12 @@ pub struct UsbIpServer {
 }
 
 impl UsbIpServer {
-    /// Create a `UsbIpServer` with simulated devices
+    /// Create a [UsbIpServer] with simulated devices
     pub fn new_simulated(devices: Vec<UsbDevice>) -> Self {
         Self { devices }
     }
 
-    /// Create a `UsbIpServer` exposing devices in the host, and redirect all USB transfers to them using libusb
+    /// Create a [UsbIpServer] exposing devices in the host, and redirect all USB transfers to them using libusb
     pub fn new_from_host() -> Self {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {
@@ -263,7 +263,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
     }
 }
 
-/// Spawn a USB/IP server at `addr` using tokio
+/// Spawn a USB/IP server at `addr` using [TcpListener]
 pub async fn server(addr: SocketAddr, server: UsbIpServer) {
     let mut listener = TcpListener::bind(addr).await.expect("bind to addr");
 
@@ -359,5 +359,11 @@ mod test {
         handler(&mut mock_socket, Arc::new(server)).await.ok();
         // OP_REQ_IMPORT
         assert_eq!(mock_socket.output.len(), 0x140);
+    }
+
+    #[test]
+    fn test_new_from_host() {
+        // should not panic
+        let _ = UsbIpServer::new_from_host();
     }
 }

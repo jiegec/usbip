@@ -1,7 +1,7 @@
 //! Host USB
 use super::*;
 
-/// A handler of a CDC ACM
+/// A handler to pass requests to a USB device of the host
 #[derive(Clone)]
 pub struct UsbHostHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
