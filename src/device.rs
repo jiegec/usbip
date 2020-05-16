@@ -327,8 +327,8 @@ impl UsbDevice {
                 // control out
                 debug!("Control OUT setup={:x?}", setup_packet);
             }
-            (Some(Interrupt), In) => {
-                // interrupt in
+            (Some(_), _) => {
+                // others
                 let intf = intf.unwrap();
                 let mut handler = intf.handler.lock().unwrap();
                 let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;

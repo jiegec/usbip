@@ -13,6 +13,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
+pub mod cdc;
 mod consts;
 mod device;
 mod endpoint;
