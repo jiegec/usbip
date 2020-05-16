@@ -164,8 +164,9 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
 #[cfg(test)]
 mod test {
     use super::*;
+
     #[tokio::test]
-    async fn req_devlist() {
+    async fn req_empty_devlist() {
         let server = UsbIpServer { devices: vec![] };
 
         // OP_REQ_DEVLIST
@@ -176,5 +177,58 @@ mod test {
             mock_socket.output,
             [0x01, 0x11, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         );
+    }
+
+    #[tokio::test]
+    async fn req_sample_devlist() {
+        let intf_handler = Arc::new(Mutex::new(
+            Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let server = UsbIpServer {
+            devices: vec![UsbDevice::new(0).with_interface(
+                ClassCode::CDC as u8,
+                cdc::CDC_ACM_SUBCLASS,
+                0x00,
+                "Test CDC ACM",
+                cdc::UsbCdcAcmHandler::endpoints(),
+                intf_handler.clone(),
+            )],
+        };
+
+        // OP_REQ_DEVLIST
+        let mut mock_socket = MockSocket::new(vec![0x01, 0x11, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00]);
+        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        // OP_REP_DEVLIST
+        // header: 0xC
+        // device: 0x138
+        // interface: 4 * 0x1
+        assert_eq!(mock_socket.output.len(), 0xC + 0x138 + 4 * 0x1);
+    }
+
+    #[tokio::test]
+    async fn req_import() {
+        let intf_handler = Arc::new(Mutex::new(
+            Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let server = UsbIpServer {
+            devices: vec![UsbDevice::new(0).with_interface(
+                ClassCode::CDC as u8,
+                cdc::CDC_ACM_SUBCLASS,
+                0x00,
+                "Test CDC ACM",
+                cdc::UsbCdcAcmHandler::endpoints(),
+                intf_handler.clone(),
+            )],
+        };
+
+        // OP_REQ_IMPORT
+        let mut req = vec![0x01, 0x11, 0x80, 0x03, 0x00, 0x00, 0x00, 0x00];
+        let mut path = "0".as_bytes().to_vec();
+        path.resize(32, 0);
+        req.extend(path);
+        let mut mock_socket = MockSocket::new(req);
+        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        // OP_REQ_IMPORT
+        assert_eq!(mock_socket.output.len(), 0x140);
     }
 }
