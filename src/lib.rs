@@ -360,4 +360,45 @@ mod test {
         // OP_REQ_IMPORT
         assert_eq!(mock_socket.output.len(), 0x140);
     }
+
+    #[tokio::test]
+    async fn req_import_get_device_desc() {
+        let intf_handler = Arc::new(Mutex::new(
+            Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let server = UsbIpServer {
+            devices: vec![UsbDevice::new(0).with_interface(
+                ClassCode::CDC as u8,
+                cdc::CDC_ACM_SUBCLASS,
+                0x00,
+                "Test CDC ACM",
+                cdc::UsbCdcAcmHandler::endpoints(),
+                intf_handler.clone(),
+            )],
+        };
+
+        // OP_REQ_IMPORT
+        let mut req = vec![0x01, 0x11, 0x80, 0x03, 0x00, 0x00, 0x00, 0x00];
+        let mut path = "0".as_bytes().to_vec();
+        path.resize(32, 0);
+        req.extend(path);
+        // USBIP_CMD_SUBMIT
+        req.extend(vec![
+            0x00, 0x00, 0x00, 0x01, // command
+            0x00, 0x00, 0x00, 0x01, // seq num
+            0x00, 0x00, 0x00, 0x00, // dev id
+            0x00, 0x00, 0x00, 0x01, // IN
+            0x00, 0x00, 0x00, 0x00, // ep 0
+            0x00, 0x00, 0x00, 0x00, // transfer flags
+            0x00, 0x00, 0x00, 0x00, // transfer buffer length
+            0x00, 0x00, 0x00, 0x00, // start frame
+            0x00, 0x00, 0x00, 0x00, // number of packets
+            0x00, 0x00, 0x00, 0x00, // interval
+            0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00, // GetDescriptor to Device
+        ]);
+        let mut mock_socket = MockSocket::new(req);
+        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        // OP_REQ_IMPORT + USBIP_CMD_SUBMIT + Device Descriptor
+        assert_eq!(mock_socket.output.len(), 0x140 + 0x30 + 0x12);
+    }
 }
