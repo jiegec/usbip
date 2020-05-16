@@ -1,5 +1,6 @@
 use super::*;
 
+/// Parse the SETUP packet of control transfers
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SetupPacket {
     pub request_type: u8,

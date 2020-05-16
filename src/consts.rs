@@ -1,5 +1,6 @@
 use super::*;
 
+/// A list of known USB speeds
 #[derive(Copy, Clone, Debug)]
 pub enum UsbSpeed {
     Unknown = 0x0,
@@ -11,6 +12,7 @@ pub enum UsbSpeed {
     SuperPlus,
 }
 
+/// A list of defined USB class codes
 // https://www.usb.org/defined-class-codes
 #[derive(Copy, Clone, Debug)]
 pub enum ClassCode {
@@ -38,6 +40,7 @@ pub enum ClassCode {
     VendorSpecific = 0xFF,
 }
 
+/// A list of defined USB endpoint attributes
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum EndpointAttributes {
     Control = 0,
@@ -46,14 +49,17 @@ pub enum EndpointAttributes {
     Interrupt,
 }
 
+/// USB endpoint direction: IN or OUT
 #[derive(Copy, Clone, Debug)]
 pub enum Direction {
     In,
     Out,
 }
 
+/// Emulated max packet size of EP0
 pub const EP0_MAX_PACKET_SIZE: u16 = 64;
 
+/// A list of defined USB standard requests
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum StandardRequest {
     GetStatus = 0,
@@ -68,6 +74,7 @@ pub enum StandardRequest {
     SynthFrame = 0x12,
 }
 
+/// A list of defined USB descriptor types
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum DescriptorType {
     Device = 1,

@@ -1,3 +1,4 @@
+//! Implement HID device
 use super::*;
 
 // reference:
@@ -5,26 +6,32 @@ use super::*;
 // HID Usage Tables 1.12: https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
 
 #[derive(Clone)]
-enum UsbHidHandlerState {
+enum UsbHidKeyboardHandlerState {
     Idle,
     KeyDown,
 }
 
+/// A handler of a HID keyboard
 #[derive(Clone)]
-pub struct UsbHidHandler {
+pub struct UsbHidKeyboardHandler {
     pub report_descriptor: Vec<u8>,
-    pub pending_key_events: VecDeque<UsbHidReportKeyboard>,
-    state: UsbHidHandlerState,
+    pub pending_key_events: VecDeque<UsbHidKeyboardReport>,
+    state: UsbHidKeyboardHandlerState,
 }
 
+/// A report of a HID keyboard
+///
+/// For definition of key codes, see [HID Usage Tables](https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf)
 #[derive(Clone)]
-pub struct UsbHidReportKeyboard {
+pub struct UsbHidKeyboardReport {
+    /// Key modifier
     pub modifier: u8,
+    /// Key code
     pub keys: [u8; 6],
 }
 
-impl UsbHidReportKeyboard {
-    pub fn from_ascii(ascii: u8) -> UsbHidReportKeyboard {
+impl UsbHidKeyboardReport {
+    pub fn from_ascii(ascii: u8) -> UsbHidKeyboardReport {
         // TODO: casing
         let key = match ascii {
             b'a'..=b'z' => ascii - b'a' + 4,
@@ -33,18 +40,18 @@ impl UsbHidReportKeyboard {
             b'\r' | b'\n' => 40,
             _ => unimplemented!("Unrecognized ascii {}", ascii),
         };
-        UsbHidReportKeyboard {
+        UsbHidKeyboardReport {
             modifier: 0,
             keys: [key, 0, 0, 0, 0, 0],
         }
     }
 }
 
-impl UsbHidHandler {
+impl UsbHidKeyboardHandler {
     pub fn new_keyboard() -> Self {
         Self {
             pending_key_events: VecDeque::new(),
-            state: UsbHidHandlerState::Idle,
+            state: UsbHidKeyboardHandlerState::Idle,
             report_descriptor: vec![
                 0x05, 0x01, // Usage Page (Generic Desktop)
                 0x09, 0x06, // Usage (Keyboard)
@@ -77,7 +84,7 @@ impl UsbHidHandler {
     }
 }
 
-impl UsbInterfaceHandler for UsbHidHandler {
+impl UsbInterfaceHandler for UsbHidKeyboardHandler {
     fn handle_urb(
         &mut self,
         interface: &UsbInterface,
@@ -105,19 +112,19 @@ impl UsbInterfaceHandler for UsbHidHandler {
             if let Direction::In = ep.direction() {
                 // interrupt in
                 match self.state {
-                    UsbHidHandlerState::Idle => {
+                    UsbHidKeyboardHandlerState::Idle => {
                         if let Some(report) = self.pending_key_events.pop_front() {
                             let mut resp = vec![report.modifier, 0];
                             resp.extend_from_slice(&report.keys);
                             info!("HID key down");
-                            self.state = UsbHidHandlerState::KeyDown;
+                            self.state = UsbHidKeyboardHandlerState::KeyDown;
                             return Ok(resp);
                         }
                     }
-                    UsbHidHandlerState::KeyDown => {
+                    UsbHidKeyboardHandlerState::KeyDown => {
                         let resp = vec![0; 6];
                         info!("HID key up");
-                        self.state = UsbHidHandlerState::Idle;
+                        self.state = UsbHidKeyboardHandlerState::Idle;
                         return Ok(resp);
                     }
                 }
@@ -145,6 +152,7 @@ impl UsbInterfaceHandler for UsbHidHandler {
     }
 }
 
+/// A list of defined HID descriptor type
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum HidDescriptorType {
     Hid = 0x21,

@@ -1,3 +1,5 @@
+//! A library for running a USB/IP server
+
 use futures::stream::StreamExt;
 use log::*;
 use num_derive::FromPrimitive;
@@ -14,18 +16,18 @@ use tokio::net::{TcpListener, TcpStream};
 mod consts;
 mod device;
 mod endpoint;
-mod hid;
+pub mod hid;
 mod interface;
 mod setup;
 mod util;
 pub use consts::*;
 pub use device::*;
 pub use endpoint::*;
-pub use hid::*;
 pub use interface::*;
 pub use setup::*;
 pub use util::*;
 
+/// Main struct of a USB/IP server
 pub struct UsbIpServer {
     pub devices: Vec<UsbDevice>,
 }
@@ -128,6 +130,7 @@ async fn handler(mut socket: TcpStream, server: Arc<UsbIpServer>) -> Result<()> 
     }
 }
 
+/// Spawn a USB/IP server at `addr` using tokio
 pub async fn server(addr: SocketAddr, server: UsbIpServer) {
     let mut listener = TcpListener::bind(addr).await.expect("bind to addr");
 
@@ -152,12 +155,4 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
     };
 
     server.await
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
 }

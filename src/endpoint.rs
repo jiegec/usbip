@@ -1,5 +1,6 @@
 use super::*;
 
+/// Represent a USB endpoint
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UsbEndpoint {
     pub address: u8,

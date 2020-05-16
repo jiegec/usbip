@@ -1,5 +1,6 @@
 use super::*;
 
+/// Represent a USB device
 #[derive(Clone, Default)]
 pub struct UsbDevice {
     pub path: String,
