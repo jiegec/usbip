@@ -2,6 +2,8 @@
 
 A Rust library to run a USB/IP server to simulate USB devices.
 
+It also enables sharing devices from an OS supporting libusb(libusb claims that it supports Linux, macOS, Windows, OpenBSD/NetBSD, Haiku and Solaris) to another OS supporting USB/IP(Linux, Windows). Only sharing a HID device from macOS to Linux is tested for now.
+
 [![Coverage Status](https://coveralls.io/repos/github/jiegec/usbip/badge.svg?branch=master)](https://coveralls.io/github/jiegec/usbip?branch=master)
 
 ## How to use
