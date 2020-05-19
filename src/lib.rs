@@ -172,7 +172,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
         socket.read_exact(&mut command).await?;
         match command {
             [0x01, 0x11, 0x80, 0x05] => {
-                debug!("Got OP_REQ_DEVLIST");
+                trace!("Got OP_REQ_DEVLIST");
                 let _status = socket.read_u32().await?;
 
                 // OP_REP_DEVLIST
@@ -182,10 +182,10 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 for dev in &server.devices {
                     dev.write_dev_with_interfaces(&mut socket).await?;
                 }
-                debug!("Sent OP_REP_DEVLIST");
+                trace!("Sent OP_REP_DEVLIST");
             }
             [0x01, 0x11, 0x80, 0x03] => {
-                debug!("Got OP_REQ_IMPORT");
+                trace!("Got OP_REQ_IMPORT");
                 let _status = socket.read_u32().await?;
                 let mut bus_id = [0u8; 32];
                 socket.read_exact(&mut bus_id).await?;
@@ -201,7 +201,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 }
 
                 // OP_REP_IMPORT
-                debug!("Sent OP_REP_IMPORT");
+                trace!("Sent OP_REP_IMPORT");
                 socket.write_u32(0x01110003).await?;
                 if let Some(dev) = current_import_device {
                     socket.write_u32(0).await?;
@@ -211,7 +211,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 }
             }
             [0x00, 0x00, 0x00, 0x01] => {
-                debug!("Got USBIP_CMD_SUBMIT");
+                trace!("Got USBIP_CMD_SUBMIT");
                 let seq_num = socket.read_u32().await?;
                 let dev_id = socket.read_u32().await?;
                 let direction = socket.read_u32().await?;
@@ -226,12 +226,12 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 let device = current_import_device.unwrap();
                 let real_ep = if direction == 0 { ep } else { ep | 0x80 };
                 let (usb_ep, intf) = device.find_ep(real_ep as u8).unwrap();
-                debug!("->Endpoint {:02x?}", usb_ep);
-                debug!("->Setup {:02x?}", setup);
+                trace!("->Endpoint {:02x?}", usb_ep);
+                trace!("->Setup {:02x?}", setup);
                 let resp = device
                     .handle_urb(socket, usb_ep, intf, transfer_buffer_length, setup)
                     .await?;
-                debug!("<-Resp {:02x?}", resp);
+                trace!("<-Resp {:02x?}", resp);
 
                 // USBIP_RET_USBMIT
                 // command
@@ -256,7 +256,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 socket.write_all(&resp).await?;
             }
             [0x00, 0x00, 0x00, 0x02] => {
-                debug!("Got USBIP_CMD_UNLINK");
+                trace!("Got USBIP_CMD_UNLINK");
             }
             _ => warn!("Got unknown command {:?}", command),
         }
