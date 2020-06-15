@@ -257,6 +257,24 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
             }
             [0x00, 0x00, 0x00, 0x02] => {
                 trace!("Got USBIP_CMD_UNLINK");
+                let seq_num = socket.read_u32().await?;
+                let dev_id = socket.read_u32().await?;
+                let direction = socket.read_u32().await?;
+                let ep = socket.read_u32().await?;
+                let seq_num_submit = socket.read_u32().await?;
+                // 24 bytes of struct padding
+                let mut padding = [0u8; 6 * 4];
+                socket.read_exact(&mut padding).await?;
+
+                // USBIP_RET_UNLINK
+                // command
+                socket.write_u32(0x4).await?;
+                socket.write_u32(seq_num).await?;
+                socket.write_u32(dev_id).await?;
+                socket.write_u32(direction).await?;
+                socket.write_u32(ep).await?;
+                // status
+                socket.write_u32(0).await?;
             }
             _ => warn!("Got unknown command {:?}", command),
         }
