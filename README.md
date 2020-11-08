@@ -1,6 +1,7 @@
 # usbip
 
 [![Coverage Status](https://coveralls.io/repos/github/jiegec/usbip/badge.svg?branch=master)](https://coveralls.io/github/jiegec/usbip?branch=master)
+[![crates.io](https://img.shields.io/crates/v/usbip.svg)](https://crates.io/crates/usbip)
 
 A Rust library to run a USB/IP server to simulate USB devices.
 
