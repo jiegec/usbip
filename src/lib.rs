@@ -287,10 +287,9 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
 
     let server = async move {
         let usbip_server = Arc::new(server);
-        let mut incoming = listener.incoming();
-        while let Some(socket_res) = incoming.next().await {
-            match socket_res {
-                Ok(mut socket) => {
+        loop {
+            match listener.accept().await {
+                Ok((mut socket, _addr)) => {
                     info!("Got connection from {:?}", socket.peer_addr());
                     let new_server = usbip_server.clone();
                     tokio::spawn(async move {

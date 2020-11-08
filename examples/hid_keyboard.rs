@@ -30,7 +30,7 @@ async fn main() {
 
     loop {
         // sleep 1s
-        tokio::time::delay_for(Duration::new(1, 0)).await;
+        tokio::time::sleep(Duration::new(1, 0)).await;
         let mut handler = handler.lock().unwrap();
         if let Some(hid) = handler
             .as_any()

@@ -12,6 +12,6 @@ async fn main() {
 
     loop {
         // sleep 1s
-        tokio::time::delay_for(Duration::new(1, 0)).await;
+        tokio::time::sleep(Duration::new(1, 0)).await;
     }
 }
