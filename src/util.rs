@@ -27,7 +27,7 @@ mod tests {
         pin::Pin,
         task::{Context, Poll},
     };
-    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
     pub(crate) struct MockSocket {
         pub input: Cursor<Vec<u8>>,
@@ -47,9 +47,10 @@ mod tests {
         fn poll_read(
             self: Pin<&mut Self>,
             cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize>> {
-            Poll::Ready(std::io::Read::read(&mut self.get_mut().input, buf))
+            buf: &mut ReadBuf,
+        ) -> Poll<Result<()>> {
+            // safe, see https://doc.rust-lang.org/std/pin/index.html#pinning-is-structural-for-field
+            unsafe { self.map_unchecked_mut(|s| &mut s.input).poll_read(cx, buf) }
         }
     }
 
