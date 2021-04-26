@@ -47,7 +47,14 @@ impl UsbIpServer {
         let mut devices = vec![];
         if let Ok(list) = rusb::devices() {
             for dev in list.iter() {
-                let handle = Arc::new(Mutex::new(dev.open().unwrap()));
+                let open_device = match dev.open() {
+                    Ok(dev) => dev,
+                    Err(err) => {
+                        println!("Impossible to share {:?}: {}", dev, err);
+                        continue;
+                    }
+                };
+                let handle = Arc::new(Mutex::new(open_device));
                 let desc = dev.device_descriptor().unwrap();
                 let cfg = dev.active_config_descriptor().unwrap();
                 let mut interfaces = vec![];
