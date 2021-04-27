@@ -346,7 +346,9 @@ impl UsbDevice {
                     }
                     _ if setup_packet.request_type & 0xF == 1 => {
                         // to interface
-                        let intf = &self.interfaces[setup_packet.index as usize];
+                        // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
+                        // only low 8 bits are valid
+                        let intf = &self.interfaces[setup_packet.index as usize & 0xFF];
                         let mut handler = intf.handler.lock().unwrap();
                         let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
                         return Ok(resp);
