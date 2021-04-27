@@ -21,7 +21,7 @@ pub fn verify_descriptor(desc: &[u8]) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{
         io::*,
         pin::Pin,
@@ -74,6 +74,3 @@ mod tests {
         }
     }
 }
-
-#[cfg(test)]
-pub use tests::*;

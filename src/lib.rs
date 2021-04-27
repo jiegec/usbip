@@ -1,6 +1,5 @@
 //! A library for running a USB/IP server
 
-use futures::stream::StreamExt;
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -268,7 +267,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 let dev_id = socket.read_u32().await?;
                 let direction = socket.read_u32().await?;
                 let ep = socket.read_u32().await?;
-                let seq_num_submit = socket.read_u32().await?;
+                let _seq_num_submit = socket.read_u32().await?;
                 // 24 bytes of struct padding
                 let mut padding = [0u8; 6 * 4];
                 socket.read_exact(&mut padding).await?;
@@ -290,7 +289,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
 
 /// Spawn a USB/IP server at `addr` using [TcpListener]
 pub async fn server(addr: SocketAddr, server: UsbIpServer) {
-    let mut listener = TcpListener::bind(addr).await.expect("bind to addr");
+    let listener = TcpListener::bind(addr).await.expect("bind to addr");
 
     let server = async move {
         let usbip_server = Arc::new(server);
@@ -317,6 +316,7 @@ pub async fn server(addr: SocketAddr, server: UsbIpServer) {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::util::tests::*;
 
     #[tokio::test]
     async fn req_empty_devlist() {
