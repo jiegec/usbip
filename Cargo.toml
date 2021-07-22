@@ -1,8 +1,10 @@
+cargo-features = ["edition2021"]
+
 [package]
 name = "usbip"
 version = "0.4.0"
 authors = ["Jiajie Chen <c@jia.je>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 repository = "https://github.com/jiegec/usbip"
 description = "A library to run USB/IP server"
