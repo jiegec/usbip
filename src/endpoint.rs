@@ -14,7 +14,8 @@ pub struct UsbEndpoint {
 }
 
 impl UsbEndpoint {
-    pub(crate) fn direction(&self) -> Direction {
+    /// Get direction from MSB of address
+    pub fn direction(&self) -> Direction {
         if self.address & 0x80 != 0 {
             Direction::In
         } else {
@@ -22,6 +23,7 @@ impl UsbEndpoint {
         }
     }
 
+    /// Whether this is endpoint zero
     pub fn is_ep0(&self) -> bool {
         self.address & 0x7F == 0
     }
