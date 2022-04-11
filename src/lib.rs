@@ -90,7 +90,7 @@ impl UsbIpServer {
                         interface_protocol: intf_desc.protocol_code(),
                         endpoints,
                         string_interface: intf_desc.description_string_index().unwrap_or(0),
-                        class_specific_descriptor: Vec::from(intf_desc.extra().unwrap_or(&[])),
+                        class_specific_descriptor: Vec::from(intf_desc.extra()),
                         handler,
                     });
                 }
