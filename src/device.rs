@@ -359,6 +359,32 @@ impl UsbDevice {
             (Some(Control), Out) => {
                 // control out
                 debug!("Control OUT setup={:x?}", setup_packet);
+                match (
+                    setup_packet.request_type,
+                    FromPrimitive::from_u8(setup_packet.request),
+                ) {
+                    (0b00000000, Some(SetConfiguration)) => {
+                        let mut desc = vec![
+                            self.configuration_value, // bConfigurationValue
+                        ];
+
+                        // requested len too short: wLength < real length
+                        if setup_packet.length < desc.len() as u16 {
+                            desc.resize(setup_packet.length as usize, 0);
+                        }
+                        return Ok(desc);
+                    }
+                    _ if setup_packet.request_type & 0xF == 1 => {
+                        // to interface
+                        // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
+                        // only low 8 bits are valid
+                        let intf = &self.interfaces[setup_packet.index as usize & 0xFF];
+                        let mut handler = intf.handler.lock().unwrap();
+                        let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
+                        return Ok(resp);
+                    }
+                    _ => unimplemented!("control out"),
+                }
             }
             (Some(_), _) => {
                 // others
@@ -369,6 +395,5 @@ impl UsbDevice {
             }
             _ => unimplemented!("transfer to {:?}", ep),
         }
-        Ok(vec![])
     }
 }
