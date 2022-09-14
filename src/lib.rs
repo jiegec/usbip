@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use rusb::*;
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
-use std::io::Result;
+use std::io::{ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
@@ -175,7 +175,14 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
     let mut current_import_device = None;
     loop {
         let mut command = [0u8; 4];
-        socket.read_exact(&mut command).await?;
+        if let Err(err) = socket.read_exact(&mut command).await {
+            if err.kind() == ErrorKind::UnexpectedEof {
+                info!("Remote closed the connection");
+                return Ok(());
+            } else {
+                return Err(err);
+            }
+        }
         match command {
             [0x01, 0x11, 0x80, 0x05] => {
                 trace!("Got OP_REQ_DEVLIST");
