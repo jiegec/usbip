@@ -246,7 +246,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     .await?;
                 trace!("<-Resp {:02x?}", resp);
 
-                // USBIP_RET_USBMIT
+                // USBIP_RET_SUBMIT
                 // command
                 socket.write_u32(0x3).await?;
                 socket.write_u32(seq_num).await?;

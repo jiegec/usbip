@@ -14,7 +14,7 @@ pub struct UsbInterface {
 
 /// A handler of a custom usb interface
 pub trait UsbInterfaceHandler {
-    /// Return the class specific desciptor which is inserted between interface descriptor and endpoint descriptor
+    /// Return the class specific descriptor which is inserted between interface descriptor and endpoint descriptor
     fn get_class_specific_descriptor(&self) -> Vec<u8>;
 
     /// Handle a URB(USB Request Block) targeting at this interface
