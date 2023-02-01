@@ -3,17 +3,17 @@ use super::*;
 
 /// A handler to pass requests to a USB device of the host
 #[derive(Clone)]
-pub struct UsbHostHandler {
+pub struct UsbHostInterfaceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }
 
-impl UsbHostHandler {
+impl UsbHostInterfaceHandler {
     pub fn new(handle: Arc<Mutex<DeviceHandle<GlobalContext>>>) -> Self {
         Self { handle }
     }
 }
 
-impl UsbInterfaceHandler for UsbHostHandler {
+impl UsbInterfaceHandler for UsbHostInterfaceHandler {
     fn handle_urb(
         &mut self,
         _interface: &UsbInterface,
@@ -84,6 +84,58 @@ impl UsbInterfaceHandler for UsbHostHandler {
 
     fn get_class_specific_descriptor(&self) -> Vec<u8> {
         return vec![];
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// A handler to pass requests to a USB device of the host
+#[derive(Clone)]
+pub struct UsbHostDeviceHandler {
+    handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
+}
+
+impl UsbHostDeviceHandler {
+    pub fn new(handle: Arc<Mutex<DeviceHandle<GlobalContext>>>) -> Self {
+        Self { handle }
+    }
+}
+
+impl UsbDeviceHandler for UsbHostDeviceHandler {
+    fn handle_urb(&mut self, setup: SetupPacket, req: &[u8]) -> Result<Vec<u8>> {
+        debug!("To host device: setup={:?} req={:?}", setup, req);
+        let mut buffer = [0u8; 1024];
+        let timeout = std::time::Duration::new(1, 0);
+        let handle = self.handle.lock().unwrap();
+        // control
+        if setup.request_type & 0x80 == 0 {
+            // control out
+            handle
+                .write_control(
+                    setup.request_type,
+                    setup.request,
+                    setup.value,
+                    setup.index,
+                    req,
+                    timeout,
+                )
+                .ok();
+        } else {
+            // control in
+            if let Ok(len) = handle.read_control(
+                setup.request_type,
+                setup.request,
+                setup.value,
+                setup.index,
+                &mut buffer,
+                timeout,
+            ) {
+                return Ok(Vec::from(&buffer[..len]));
+            }
+        }
+        Ok(vec![])
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

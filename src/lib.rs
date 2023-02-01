@@ -81,9 +81,10 @@ impl UsbIpServer {
                         });
                     }
 
-                    let handler =
-                        Arc::new(Mutex::new(Box::new(UsbHostHandler::new(handle.clone()))
-                            as Box<dyn UsbInterfaceHandler + Send>));
+                    let handler = Arc::new(Mutex::new(Box::new(UsbHostInterfaceHandler::new(
+                        handle.clone(),
+                    ))
+                        as Box<dyn UsbInterfaceHandler + Send>));
                     interfaces.push(UsbInterface {
                         interface_class: intf_desc.class_code(),
                         interface_subclass: intf_desc.sub_class_code(),
@@ -130,6 +131,9 @@ impl UsbIpServer {
                         interval: 0,
                     },
                     interfaces,
+                    device_handler: Some(Arc::new(Mutex::new(Box::new(
+                        UsbHostDeviceHandler::new(handle.clone()),
+                    )))),
                     ..UsbDevice::default()
                 };
 
