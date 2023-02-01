@@ -17,6 +17,7 @@ pub struct UsbDevice {
     pub configuration_value: u8,
     pub num_configurations: u8,
     pub interfaces: Vec<UsbInterface>,
+    pub device_handler: Option<Arc<Mutex<Box<dyn UsbDeviceHandler + Send>>>>,
     pub(crate) ep0_in: UsbEndpoint,
     pub(crate) ep0_out: UsbEndpoint,
     // strings
@@ -78,6 +79,14 @@ impl UsbDevice {
             class_specific_descriptor,
             handler,
         });
+        self
+    }
+
+    pub fn with_device_handler(
+        mut self,
+        handler: Arc<Mutex<Box<dyn UsbDeviceHandler + Send>>>,
+    ) -> Self {
+        self.device_handler = Some(handler);
         self
     }
 
@@ -353,6 +362,13 @@ impl UsbDevice {
                         let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
                         return Ok(resp);
                     }
+                    _ if setup_packet.request_type & 0xF == 0 && self.device_handler.is_some() => {
+                        // to device
+                        // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
+                        let lock = self.device_handler.as_ref().unwrap();
+                        let mut handler = lock.lock().unwrap();
+                        return Ok(handler.handle_urb(setup_packet, &out_data)?);
+                    }
                     _ => unimplemented!("control in"),
                 }
             }
@@ -383,6 +399,13 @@ impl UsbDevice {
                         let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
                         return Ok(resp);
                     }
+                    _ if setup_packet.request_type & 0xF == 0 && self.device_handler.is_some() => {
+                        // to device
+                        // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
+                        let lock = self.device_handler.as_ref().unwrap();
+                        let mut handler = lock.lock().unwrap();
+                        return Ok(handler.handle_urb(setup_packet, &out_data)?);
+                    }
                     _ => unimplemented!("control out"),
                 }
             }
@@ -396,4 +419,22 @@ impl UsbDevice {
             _ => unimplemented!("transfer to {:?}", ep),
         }
     }
+}
+
+/// A handler for URB targeting the device
+pub trait UsbDeviceHandler {
+    /// Handle a URB(USB Request Block) targeting at this device
+    ///
+    /// When the lower 4 bits of bmRequestType is zero and the URB is not handled by the library, this function is called
+    fn handle_urb(&mut self, setup: SetupPacket, req: &[u8]) -> Result<Vec<u8>>;
+
+    /// Helper to downcast to actual struct
+    ///
+    /// Please implement it as:
+    /// ```ignore
+    /// fn as_any(&mut self) -> &mut dyn Any {
+    ///     self
+    /// }
+    /// ```
+    fn as_any(&mut self) -> &mut dyn Any;
 }
