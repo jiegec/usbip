@@ -17,6 +17,7 @@ pub mod cdc;
 mod consts;
 mod device;
 mod endpoint;
+pub mod ftdi;
 pub mod hid;
 mod host;
 mod interface;
