@@ -42,7 +42,7 @@ impl UsbIpServer {
         Self { devices }
     }
 
-    fn with_devices(device_list: Vec<Device<GlobalContext>>)  -> Vec<UsbDevice> {
+    fn with_devices(device_list: Vec<Device<GlobalContext>>) -> Vec<UsbDevice> {
         let mut devices = vec![];
 
         for dev in device_list {
@@ -63,7 +63,6 @@ impl UsbIpServer {
                 .set_auto_detach_kernel_driver(true)
                 .ok();
             for intf in cfg.interfaces() {
-
                 // ignore alternate settings
                 let intf_desc = intf.descriptors().next().unwrap();
                 handle
@@ -132,9 +131,9 @@ impl UsbIpServer {
                     interval: 0,
                 },
                 interfaces,
-                device_handler: Some(Arc::new(Mutex::new(Box::new(
-                    UsbHostDeviceHandler::new(handle.clone()),
-                )))),
+                device_handler: Some(Arc::new(Mutex::new(Box::new(UsbHostDeviceHandler::new(
+                    handle.clone(),
+                ))))),
                 ..UsbDevice::default()
             };
 
@@ -179,23 +178,29 @@ impl UsbIpServer {
                 for d in list.iter() {
                     devs.push(d)
                 }
-                Self {devices: Self::with_devices(devs)}
-            },
-            Err(_) => Self { devices: vec![] }
+                Self {
+                    devices: Self::with_devices(devs),
+                }
+            }
+            Err(_) => Self { devices: vec![] },
         }
     }
 
     pub fn new_from_host_with_filter<F>(filter: F) -> Self
-            where F: FnMut(&Device<GlobalContext>) -> bool  {
+    where
+        F: FnMut(&Device<GlobalContext>) -> bool,
+    {
         match rusb::devices() {
             Ok(list) => {
                 let mut devs = vec![];
                 for d in list.iter().filter(filter) {
                     devs.push(d)
                 }
-                Self {devices: Self::with_devices(devs) }
-            },
-            Err(_) => Self { devices: vec![] }
+                Self {
+                    devices: Self::with_devices(devs),
+                }
+            }
+            Err(_) => Self { devices: vec![] },
         }
     }
 }

@@ -1,7 +1,7 @@
+use crate::{SetupPacket, UsbDeviceHandler};
 use std::any::Any;
-use crate::{UsbDeviceHandler, SetupPacket};
 
-const FTDI_DEVICE_REQ_TYPE:u8 = 0xC0;
+const FTDI_DEVICE_REQ_TYPE: u8 = 0xC0;
 const FTDI_SIO_RESET: u8 = 0; /* Reset the port */
 const FTDI_SIO_MODEM_CTRL: u8 = 1; /* Set the modem control register */
 const FTDI_SIO_SET_FLOW_CTRL: u8 = 2; /* Set flow control register */
@@ -30,7 +30,7 @@ enum FTDISIORequestTypes {
     SetBitmode,
     ReadPins,
     ReadEEPROM,
-    Unknown
+    Unknown,
 }
 
 impl From<u8> for FTDISIORequestTypes {
@@ -54,10 +54,8 @@ impl From<u8> for FTDISIORequestTypes {
     }
 }
 
-
 #[derive(Clone)]
-pub struct FtdiDeviceHandler {
-}
+pub struct FtdiDeviceHandler {}
 
 impl FtdiDeviceHandler {
     pub fn new() -> Self {
@@ -66,23 +64,20 @@ impl FtdiDeviceHandler {
 }
 
 impl UsbDeviceHandler for FtdiDeviceHandler {
-    fn handle_urb(&mut self, setup: SetupPacket, _: &[u8]) -> Result<Vec<u8>, std::io::Error>
-    {
+    fn handle_urb(&mut self, setup: SetupPacket, _: &[u8]) -> Result<Vec<u8>, std::io::Error> {
         // dummy responses for now
         match setup.request_type {
-            FTDI_DEVICE_REQ_TYPE=> {
+            FTDI_DEVICE_REQ_TYPE => {
                 match setup.request.into() {
-                    FTDISIORequestTypes::GetModemStatus => {
-                        Ok(vec![0x00,0x00,0x00,0x00])
-                    },
+                    FTDISIORequestTypes::GetModemStatus => Ok(vec![0x00, 0x00, 0x00, 0x00]),
                     FTDISIORequestTypes::GetLatencyTimer => {
                         // 1ms
                         Ok(vec![0x01])
-                    },
-                    _ => Ok(vec![])
+                    }
+                    _ => Ok(vec![]),
                 }
-            },
-            _ => Ok(vec![])
+            }
+            _ => Ok(vec![]),
         }
     }
 
