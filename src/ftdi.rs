@@ -1,4 +1,4 @@
-use crate::{SetupPacket, UsbDeviceHandler};
+use crate::{EndpointAttributes, SetupPacket, UsbDeviceHandler, UsbEndpoint};
 use std::any::Any;
 
 const FTDI_DEVICE_REQ_TYPE: u8 = 0xC0;
@@ -16,6 +16,9 @@ const FTDI_SIO_SET_BITMODE: u8 = 0x0b; /* Set bitbang mode */
 const FTDI_SIO_READ_PINS: u8 = 0x0c; /* Read immediate value of pins */
 const FTDI_SIO_READ_EEPROM: u8 = 0x90; /* Read EEPROM */
 
+const EP_MAX_PACKET_SIZE: u16 = 512;
+
+#[derive(Debug)]
 enum FTDISIORequestTypes {
     Reset,
     ModemCtrl,
@@ -61,22 +64,49 @@ impl FtdiDeviceHandler {
     pub fn new() -> Self {
         Self {}
     }
+
+    pub fn endpoints(interface_count: u8) -> Vec<UsbEndpoint> {
+        let mut ret_eps = vec![];
+
+        for i in 0..interface_count {
+            ret_eps.push(UsbEndpoint {
+                /// bEndpointAddress
+                address: 0x81 + (0x2 * i),
+                /// bmAttributes
+                attributes: EndpointAttributes::Bulk as u8,
+                /// wMaxPacketSize
+                max_packet_size: EP_MAX_PACKET_SIZE as u16,
+                /// bInterval
+                interval: 0,
+            });
+
+            ret_eps.push(UsbEndpoint {
+                /// bEndpointAddress
+                address: 0x2 + (0x2 * i),
+                /// bmAttributes
+                attributes: EndpointAttributes::Bulk as u8,
+                /// wMaxPacketSize
+                max_packet_size: EP_MAX_PACKET_SIZE as u16,
+                /// bInterval
+                interval: 0,
+            })
+        }
+        ret_eps
+    }
 }
 
 impl UsbDeviceHandler for FtdiDeviceHandler {
     fn handle_urb(&mut self, setup: SetupPacket, _: &[u8]) -> Result<Vec<u8>, std::io::Error> {
-        // dummy responses for now
         match setup.request_type {
-            FTDI_DEVICE_REQ_TYPE => {
-                match setup.request.into() {
-                    FTDISIORequestTypes::GetModemStatus => Ok(vec![0x00, 0x00, 0x00, 0x00]),
-                    FTDISIORequestTypes::GetLatencyTimer => {
-                        // 1ms
-                        Ok(vec![0x01])
-                    }
-                    _ => Ok(vec![]),
+            FTDI_DEVICE_REQ_TYPE => match setup.request.into() {
+                FTDISIORequestTypes::GetModemStatus => Ok(vec![0x00]),
+                // 1 ms
+                FTDISIORequestTypes::GetLatencyTimer => Ok(vec![0x01]),
+                request => {
+                    println!("Unhandled: {:?}", request);
+                    Ok(vec![])
                 }
-            }
+            },
             _ => Ok(vec![]),
         }
     }
