@@ -25,7 +25,7 @@ impl UsbInterfaceHandler for UsbHostInterfaceHandler {
             "To host device: ep={:?} setup={:?} req={:?}",
             ep, setup, req
         );
-        let mut buffer = [0u8; 1024];
+        let mut buffer = vec![0u8; ep.max_packet_size as usize];
         let timeout = std::time::Duration::new(1, 0);
         let handle = self.handle.lock().unwrap();
         if ep.attributes == EndpointAttributes::Control as u8 {

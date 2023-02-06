@@ -1,4 +1,28 @@
 use super::*;
+use rusb::Version as rusbVersion;
+
+#[derive(Clone, Default)]
+pub struct Version {
+    pub major: u8,
+    pub minor: u8,
+    pub patch: u8,
+}
+
+impl From<rusbVersion> for Version {
+    fn from(value: rusbVersion) -> Self {
+        Self {
+            major: value.major(),
+            minor: value.minor(),
+            patch: value.sub_minor(),
+        }
+    }
+}
+
+impl Into<rusbVersion> for Version {
+    fn into(self) -> rusbVersion {
+        rusbVersion(self.major, self.minor, self.patch)
+    }
+}
 
 /// Represent a USB device
 #[derive(Clone, Default)]
@@ -10,7 +34,7 @@ pub struct UsbDevice {
     pub speed: u32,
     pub vendor_id: u16,
     pub product_id: u16,
-    pub device_bcd: u16,
+    pub device_bcd: Version,
     pub device_class: u8,
     pub device_subclass: u8,
     pub device_protocol: u8,
@@ -18,6 +42,8 @@ pub struct UsbDevice {
     pub num_configurations: u8,
     pub interfaces: Vec<UsbInterface>,
     pub device_handler: Option<Arc<Mutex<Box<dyn UsbDeviceHandler + Send>>>>,
+    pub usb_version: Version,
+
     pub(crate) ep0_in: UsbEndpoint,
     pub(crate) ep0_out: UsbEndpoint,
     // strings
@@ -130,7 +156,9 @@ impl UsbDevice {
         socket.write_u32(self.speed).await?;
         socket.write_u16(self.vendor_id).await?;
         socket.write_u16(self.product_id).await?;
-        socket.write_u16(self.device_bcd).await?;
+        socket
+            .write_u16((self.device_bcd.major as u16) << 8 | self.device_bcd.minor as u16)
+            .await?;
         socket.write_u8(self.device_class).await?;
         socket.write_u8(self.device_subclass).await?;
         socket.write_u8(self.device_protocol).await?;
@@ -198,18 +226,18 @@ impl UsbDevice {
                                 let mut desc = vec![
                                     0x12,         // bLength
                                     Device as u8, // bDescriptorType: Device
-                                    0x10,
-                                    0x02,                              // bcdUSB: USB 2.1
-                                    self.device_class,                 // bDeviceClass
-                                    self.device_subclass,              // bDeviceSubClass
-                                    self.device_protocol,              // bDeviceProtocol
+                                    self.usb_version.minor as u8,
+                                    self.usb_version.major as u8, // bcdUSB: USB 2.0
+                                    self.device_class,            // bDeviceClass
+                                    self.device_subclass,         // bDeviceSubClass
+                                    self.device_protocol,         // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
-                                    self.vendor_id as u8,              // idVendor
+                                    self.vendor_id as u8,         // idVendor
                                     (self.vendor_id >> 8) as u8,
                                     self.product_id as u8, // idProduct
                                     (self.product_id >> 8) as u8,
-                                    self.device_bcd as u8, // bcdDevice
-                                    (self.device_bcd >> 8) as u8,
+                                    self.device_bcd.minor as u8, // bcdDevice
+                                    self.device_bcd.major as u8,
                                     self.string_manufacturer, // iManufacturer
                                     self.string_product,      // iProduct
                                     self.string_serial,       // iSerial
@@ -331,14 +359,14 @@ impl UsbDevice {
                                 let mut desc = vec![
                                     0x0A,                  // bLength
                                     DeviceQualifier as u8, // bDescriptorType: Device Qualifier
-                                    0x10,
-                                    0x02,                              // bcdUSB USB 2.1
-                                    self.device_class,                 // bDeviceClass
-                                    self.device_subclass,              // bDeviceSUbClass
-                                    self.device_protocol,              // bDeviceProtocol
+                                    self.usb_version.minor as u8,
+                                    self.usb_version.major as u8,
+                                    self.device_class,    // bDeviceClass
+                                    self.device_subclass, // bDeviceSUbClass
+                                    self.device_protocol, // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
-                                    self.num_configurations,           // bNumConfigurations
-                                    0x00,                              // reserved
+                                    self.num_configurations, // bNumConfigurations
+                                    0x00,                 // reserved
                                 ];
 
                                 // requested len too short: wLength < real length
