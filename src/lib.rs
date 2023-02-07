@@ -116,7 +116,7 @@ impl UsbIpServer {
                     device_class: desc.class_code(),
                     device_subclass: desc.sub_class_code(),
                     device_protocol: desc.protocol_code(),
-                    device_bcd: device::Version::from(desc.device_version()),
+                    device_bcd: desc.device_version().into(),
                     configuration_value: cfg.number(),
                     num_configurations: desc.num_configurations(),
                     ep0_in: UsbEndpoint {
@@ -135,7 +135,7 @@ impl UsbIpServer {
                     device_handler: Some(Arc::new(Mutex::new(Box::new(
                         UsbHostDeviceHandler::new(handle.clone()),
                     )))),
-                    usb_version: device::Version::from(desc.usb_version()),
+                    usb_version: desc.usb_version().into(),
                     ..UsbDevice::default()
                 };
 
