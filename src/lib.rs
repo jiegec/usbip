@@ -292,6 +292,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 socket.write_u32(ep).await?;
                 // status
                 socket.write_u32(0).await?;
+                socket.write_all(&mut padding).await?;
             }
             _ => warn!("Got unknown command {:?}", command),
         }
