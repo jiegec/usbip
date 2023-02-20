@@ -67,7 +67,7 @@ impl UsbIpServer {
                 handle
                     .lock()
                     .unwrap()
-                    .claim_interface(intf_desc.interface_number())
+                    .set_auto_detach_kernel_driver(true)
                     .ok();
                 let mut endpoints = vec![];
 
