@@ -185,30 +185,17 @@ impl UsbDevice {
         Ok(())
     }
 
-    pub(crate) async fn handle_urb<T: AsyncReadExt + AsyncWriteExt + Unpin>(
+    pub(crate) async fn handle_urb(
         &self,
-        socket: &mut T,
         ep: UsbEndpoint,
         intf: Option<&UsbInterface>,
-        transfer_buffer_length: u32,
-        setup: [u8; 8],
+        setup_packet: SetupPacket,
+        out_data: &Vec<u8>,
     ) -> Result<Vec<u8>> {
         use DescriptorType::*;
         use Direction::*;
         use EndpointAttributes::*;
         use StandardRequest::*;
-
-        // parse setup
-        let setup_packet = SetupPacket::parse(&setup);
-
-        // read data from socket for OUT
-        let out_data = if let Out = ep.direction() {
-            let mut data = vec![0u8; transfer_buffer_length as usize];
-            socket.read_exact(&mut data).await?;
-            data
-        } else {
-            vec![]
-        };
 
         match (FromPrimitive::from_u8(ep.attributes), ep.direction()) {
             (Some(Control), In) => {
