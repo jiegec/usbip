@@ -264,7 +264,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
             [0x00, 0x00, 0x00, 0x01] => {
                 trace!("Got USBIP_CMD_SUBMIT");
                 let seq_num = socket.read_u32().await?;
-                let dev_id = socket.read_u32().await?;
+                let _dev_id = socket.read_u32().await?;
                 let direction = socket.read_u32().await?;
                 let ep = socket.read_u32().await?;
                 let _transfer_flags = socket.read_u32().await?;
@@ -275,43 +275,73 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 let mut setup = [0u8; 8];
                 socket.read_exact(&mut setup).await?;
                 let device = current_import_device.unwrap();
-                let real_ep = if direction == 0 { ep } else { ep | 0x80 };
+
+                let out = direction == 0;
+                let real_ep = if out { ep } else { ep | 0x80 };
+                // read request data from socket for OUT
+                let out_data = if out {
+                    let mut data = vec![0u8; transfer_buffer_length as usize];
+                    socket.read_exact(&mut data).await?;
+                    data
+                } else {
+                    vec![]
+                };
+
                 let (usb_ep, intf) = device.find_ep(real_ep as u8).unwrap();
                 trace!("->Endpoint {:02x?}", usb_ep);
                 trace!("->Setup {:02x?}", setup);
+                trace!("->Request {:02x?}", out_data);
                 let resp = device
-                    .handle_urb(socket, usb_ep, intf, transfer_buffer_length, setup)
+                    .handle_urb(usb_ep, intf, SetupPacket::parse(&setup), &out_data)
                     .await?;
-                trace!("<-Resp {:02x?}", resp);
+
+                if out {
+                    trace!("<-Resp {:02x?}", resp);
+                } else {
+                    trace!("<-Wrote {}", out_data.len());
+                }
 
                 // USBIP_RET_SUBMIT
                 // command
                 socket.write_u32(0x3).await?;
                 socket.write_u32(seq_num).await?;
-                socket.write_u32(dev_id).await?;
-                socket.write_u32(direction).await?;
-                socket.write_u32(ep).await?;
+                socket.write_u32(0).await?;
+                socket.write_u32(0).await?;
+                socket.write_u32(0).await?;
                 // status
                 socket.write_u32(0).await?;
-                // actual length
-                socket.write_u32(resp.len() as u32).await?;
+
+                let actual_length = if out {
+                    // In the out endpoint case, the actual_length field should be
+                    // same as the data length received in the original URB transaction.
+                    // No data bytes are sent
+                    transfer_buffer_length as u32
+                } else {
+                    resp.len() as u32
+                };
+                // actual_length
+                socket.write_u32(actual_length).await?;
+
                 // start frame
                 socket.write_u32(0).await?;
                 // number of packets
                 socket.write_u32(0).await?;
                 // error count
                 socket.write_u32(0).await?;
-                // setup
-                socket.write_all(&setup).await?;
+                // padding
+                let padding = [0u8; 8];
+                socket.write_all(&padding).await?;
                 // data
-                socket.write_all(&resp).await?;
+                if !out {
+                    socket.write_all(&resp).await?;
+                }
             }
             [0x00, 0x00, 0x00, 0x02] => {
                 trace!("Got USBIP_CMD_UNLINK");
                 let seq_num = socket.read_u32().await?;
-                let dev_id = socket.read_u32().await?;
-                let direction = socket.read_u32().await?;
-                let ep = socket.read_u32().await?;
+                let _dev_id = socket.read_u32().await?;
+                let _direction = socket.read_u32().await?;
+                let _ep = socket.read_u32().await?;
                 let _seq_num_submit = socket.read_u32().await?;
                 // 24 bytes of struct padding
                 let mut padding = [0u8; 6 * 4];
@@ -321,9 +351,9 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 // command
                 socket.write_u32(0x4).await?;
                 socket.write_u32(seq_num).await?;
-                socket.write_u32(dev_id).await?;
-                socket.write_u32(direction).await?;
-                socket.write_u32(ep).await?;
+                socket.write_u32(0).await?;
+                socket.write_u32(0).await?;
+                socket.write_u32(0).await?;
                 // status
                 socket.write_u32(0).await?;
                 socket.write_all(&mut padding).await?;
