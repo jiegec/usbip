@@ -2,7 +2,7 @@
 use super::*;
 
 /// A handler to pass requests to a USB device of the host
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UsbHostInterfaceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }
@@ -92,7 +92,7 @@ impl UsbInterfaceHandler for UsbHostInterfaceHandler {
 }
 
 /// A handler to pass requests to a USB device of the host
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UsbHostDeviceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }

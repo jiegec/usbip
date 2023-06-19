@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use super::*;
 use rusb::Version as rusbVersion;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Version {
     pub major: u8,
     pub minor: u8,
@@ -25,7 +27,7 @@ impl Into<rusbVersion> for Version {
 }
 
 /// Represent a USB device
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct UsbDevice {
     pub path: String,
     pub bus_id: String,
@@ -437,7 +439,7 @@ impl UsbDevice {
 }
 
 /// A handler for URB targeting the device
-pub trait UsbDeviceHandler {
+pub trait UsbDeviceHandler: Debug {
     /// Handle a URB(USB Request Block) targeting at this device
     ///
     /// When the lower 4 bits of bmRequestType is zero and the URB is not handled by the library, this function is called

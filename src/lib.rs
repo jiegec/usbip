@@ -31,6 +31,7 @@ pub use setup::*;
 pub use util::*;
 
 /// Main struct of a USB/IP server
+#[derive(Debug, Default)]
 pub struct UsbIpServer {
     devices: Vec<UsbDevice>,
 }
