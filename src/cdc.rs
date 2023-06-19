@@ -2,7 +2,7 @@
 use super::*;
 
 /// A handler of a CDC ACM(Abstract Control Model)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UsbCdcAcmHandler {
     pub tx_buffer: Vec<u8>,
 }
