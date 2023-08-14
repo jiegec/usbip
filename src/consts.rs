@@ -62,13 +62,14 @@ pub enum StandardRequest {
     GetStatus = 0,
     ClearFeature = 1,
     SetFeature = 3,
+    SetAddress = 5,
     GetDescriptor = 6,
     SetDescriptor = 7,
     GetConfiguration = 8,
     SetConfiguration = 9,
-    GetInterface = 0xA,
-    SetInterface = 0x11,
-    SynthFrame = 0x12,
+    GetInterface = 10,
+    SetInterface = 11,
+    SynchFrame = 12,
 }
 
 /// A list of defined USB descriptor types
