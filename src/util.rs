@@ -20,6 +20,18 @@ pub fn verify_descriptor(desc: &[u8]) {
     assert_eq!(offset, desc.len());
 }
 
+pub fn str_eq(a: &[u8], b: &[u8]) -> bool {
+    for (x, y) in a.iter().chain([0].iter()).zip(b.iter().chain([0].iter())) {
+        if x != y {
+            return false;
+        }
+        if *x == 0 {
+            return true;
+        }
+    }
+    unreachable!()
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::{

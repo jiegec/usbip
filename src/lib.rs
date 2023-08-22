@@ -244,7 +244,7 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 for device in &server.devices {
                     let mut expected = device.bus_id.as_bytes().to_vec();
                     expected.resize(32, 0);
-                    if expected == bus_id {
+                    if str_eq(&expected, &bus_id) {
                         current_import_device = Some(device);
                         info!("Found device {:?}", device.path);
                         break;
