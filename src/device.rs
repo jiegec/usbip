@@ -85,6 +85,30 @@ impl UsbDevice {
         res
     }
 
+    /// Returns the old value, if present.
+    pub fn set_configuration_name(&mut self, name: &str) -> Option<String> {
+        self.string_pool
+            .insert(self.string_configuration, name.to_string())
+    }
+
+    /// Returns the old value, if present.
+    pub fn set_serial_number(&mut self, name: &str) -> Option<String> {
+        self.string_pool
+            .insert(self.string_serial, name.to_string())
+    }
+
+    /// Returns the old value, if present.
+    pub fn set_product_name(&mut self, name: &str) -> Option<String> {
+        self.string_pool
+            .insert(self.string_product, name.to_string())
+    }
+
+    /// Returns the old value, if present.
+    pub fn set_manufacturer_name(&mut self, name: &str) -> Option<String> {
+        self.string_pool
+            .insert(self.string_manufacturer, name.to_string())
+    }
+
     pub fn with_interface(
         mut self,
         interface_class: u8,
@@ -452,4 +476,28 @@ pub trait UsbDeviceHandler {
     /// }
     /// ```
     fn as_any(&mut self) -> &mut dyn Any;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_set_string_descriptors() {
+        let mut device = UsbDevice::new(0);
+
+        assert_eq!(device.string_pool.len(), 4);
+
+        assert!(device.set_configuration_name("test").is_some());
+        assert!(device.set_manufacturer_name("test").is_some());
+        assert!(device.set_product_name("test").is_some());
+        assert!(device.set_serial_number("test").is_some());
+
+        assert_eq!(device.string_pool.len(), 4);
+
+        assert_eq!(device.string_pool[&1], "test");
+        assert_eq!(device.string_pool[&2], "test");
+        assert_eq!(device.string_pool[&3], "test");
+        assert_eq!(device.string_pool[&4], "test");
+    }
 }
