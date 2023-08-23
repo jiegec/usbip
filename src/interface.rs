@@ -19,11 +19,13 @@ pub trait UsbInterfaceHandler {
 
     /// Handle a URB(USB Request Block) targeting at this interface
     ///
-    /// Can be one of: control transfer to ep0 or other types of transfer to its endpoint
+    /// Can be one of: control transfer to ep0 or other types of transfer to its endpoint.
+    /// The resulting data should not exceed `transfer_buffer_length`.
     fn handle_urb(
         &mut self,
         interface: &UsbInterface,
         ep: UsbEndpoint,
+        transfer_buffer_length: u32,
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>>;

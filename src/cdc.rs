@@ -47,6 +47,7 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
         &mut self,
         _interface: &UsbInterface,
         ep: UsbEndpoint,
+        _transfer_buffer_length: u32,
         _setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>> {

@@ -355,7 +355,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 trace!("->Setup {:02x?}", setup);
                 trace!("->Request {:02x?}", out_data);
                 let resp = device
-                    .handle_urb(usb_ep, intf, SetupPacket::parse(&setup), &out_data)
+                    .handle_urb(
+                        usb_ep,
+                        intf,
+                        transfer_buffer_length,
+                        SetupPacket::parse(&setup),
+                        &out_data,
+                    )
                     .await?;
 
                 if out {
@@ -378,7 +384,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     // In the out endpoint case, the actual_length field should be
                     // same as the data length received in the original URB transaction.
                     // No data bytes are sent
-                    transfer_buffer_length as u32
+                    transfer_buffer_length
                 } else {
                     resp.len() as u32
                 };

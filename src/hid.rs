@@ -89,6 +89,7 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
         &mut self,
         _interface: &UsbInterface,
         ep: UsbEndpoint,
+        _transfer_buffer_length: u32,
         setup: SetupPacket,
         _req: &[u8],
     ) -> Result<Vec<u8>> {
