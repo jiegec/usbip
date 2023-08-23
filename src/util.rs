@@ -24,10 +24,14 @@ pub fn verify_descriptor(desc: &[u8]) {
 pub(crate) mod tests {
     use std::{
         io::*,
+        net::SocketAddr,
         pin::Pin,
         task::{Context, Poll},
     };
-    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+    use tokio::{
+        io::{AsyncRead, AsyncWrite, ReadBuf},
+        net::{TcpListener, TcpStream},
+    };
 
     pub(crate) struct MockSocket {
         pub input: Cursor<Vec<u8>>,
@@ -71,6 +75,19 @@ pub(crate) mod tests {
 
         fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
             Poll::Ready(Ok(()))
+        }
+    }
+
+    pub(crate) async fn get_free_address() -> SocketAddr {
+        let stream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        stream.local_addr().unwrap()
+    }
+
+    pub(crate) async fn poll_connect(addr: SocketAddr) -> TcpStream {
+        loop {
+            if let Ok(stream) = TcpStream::connect(addr).await {
+                return stream;
+            }
         }
     }
 }
