@@ -189,6 +189,7 @@ impl UsbDevice {
         &self,
         ep: UsbEndpoint,
         intf: Option<&UsbInterface>,
+        transfer_buffer_length: u32,
         setup_packet: SetupPacket,
         out_data: &Vec<u8>,
     ) -> Result<Vec<u8>> {
@@ -374,15 +375,14 @@ impl UsbDevice {
                         // only low 8 bits are valid
                         let intf = &self.interfaces[setup_packet.index as usize & 0xFF];
                         let mut handler = intf.handler.lock().unwrap();
-                        let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
-                        return Ok(resp);
+                        handler.handle_urb(intf, ep, transfer_buffer_length, setup_packet, out_data)
                     }
                     _ if setup_packet.request_type & 0xF == 0 && self.device_handler.is_some() => {
                         // to device
                         // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
                         let lock = self.device_handler.as_ref().unwrap();
                         let mut handler = lock.lock().unwrap();
-                        return Ok(handler.handle_urb(setup_packet, &out_data)?);
+                        handler.handle_urb(transfer_buffer_length, setup_packet, out_data)
                     }
                     _ => unimplemented!("control in"),
                 }
@@ -411,15 +411,14 @@ impl UsbDevice {
                         // only low 8 bits are valid
                         let intf = &self.interfaces[setup_packet.index as usize & 0xFF];
                         let mut handler = intf.handler.lock().unwrap();
-                        let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
-                        return Ok(resp);
+                        handler.handle_urb(intf, ep, transfer_buffer_length, setup_packet, out_data)
                     }
                     _ if setup_packet.request_type & 0xF == 0 && self.device_handler.is_some() => {
                         // to device
                         // see https://www.beyondlogic.org/usbnutshell/usb6.shtml
                         let lock = self.device_handler.as_ref().unwrap();
                         let mut handler = lock.lock().unwrap();
-                        return Ok(handler.handle_urb(setup_packet, &out_data)?);
+                        handler.handle_urb(transfer_buffer_length, setup_packet, out_data)
                     }
                     _ => unimplemented!("control out"),
                 }
@@ -428,8 +427,7 @@ impl UsbDevice {
                 // others
                 let intf = intf.unwrap();
                 let mut handler = intf.handler.lock().unwrap();
-                let resp = handler.handle_urb(intf, ep, setup_packet, &out_data)?;
-                return Ok(resp);
+                handler.handle_urb(intf, ep, transfer_buffer_length, setup_packet, out_data)
             }
             _ => unimplemented!("transfer to {:?}", ep),
         }
@@ -440,8 +438,14 @@ impl UsbDevice {
 pub trait UsbDeviceHandler {
     /// Handle a URB(USB Request Block) targeting at this device
     ///
-    /// When the lower 4 bits of bmRequestType is zero and the URB is not handled by the library, this function is called
-    fn handle_urb(&mut self, setup: SetupPacket, req: &[u8]) -> Result<Vec<u8>>;
+    /// When the lower 4 bits of `bmRequestType` is zero and the URB is not handled by the library, this function is called.
+    /// The resulting data should not exceed `transfer_buffer_length`
+    fn handle_urb(
+        &mut self,
+        transfer_buffer_length: u32,
+        setup: SetupPacket,
+        req: &[u8],
+    ) -> Result<Vec<u8>>;
 
     /// Helper to downcast to actual struct
     ///

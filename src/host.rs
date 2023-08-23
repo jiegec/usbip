@@ -18,6 +18,7 @@ impl UsbInterfaceHandler for UsbHostInterfaceHandler {
         &mut self,
         _interface: &UsbInterface,
         ep: UsbEndpoint,
+        transfer_buffer_length: u32,
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>> {
@@ -25,7 +26,7 @@ impl UsbInterfaceHandler for UsbHostInterfaceHandler {
             "To host device: ep={:?} setup={:?} req={:?}",
             ep, setup, req
         );
-        let mut buffer = vec![0u8; ep.max_packet_size as usize];
+        let mut buffer = vec![0u8; transfer_buffer_length as usize];
         let timeout = std::time::Duration::new(1, 0);
         let handle = self.handle.lock().unwrap();
         if ep.attributes == EndpointAttributes::Control as u8 {
@@ -104,9 +105,14 @@ impl UsbHostDeviceHandler {
 }
 
 impl UsbDeviceHandler for UsbHostDeviceHandler {
-    fn handle_urb(&mut self, setup: SetupPacket, req: &[u8]) -> Result<Vec<u8>> {
+    fn handle_urb(
+        &mut self,
+        transfer_buffer_length: u32,
+        setup: SetupPacket,
+        req: &[u8],
+    ) -> Result<Vec<u8>> {
         debug!("To host device: setup={:?} req={:?}", setup, req);
-        let mut buffer = [0u8; 1024];
+        let mut buffer = vec![0u8; transfer_buffer_length as usize];
         let timeout = std::time::Duration::new(1, 0);
         let handle = self.handle.lock().unwrap();
         // control
