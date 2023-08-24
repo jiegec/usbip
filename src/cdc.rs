@@ -7,6 +7,12 @@ pub struct UsbCdcAcmHandler {
     pub tx_buffer: Vec<u8>,
 }
 
+impl Default for UsbCdcAcmHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Sub class code for CDC ACM
 pub const CDC_ACM_SUBCLASS: u8 = 0x02;
 
@@ -64,7 +70,7 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
                 info!(
                     "Got bulk out: {:?} \"{}\"",
                     req,
-                    String::from_utf8_lossy(&req)
+                    String::from_utf8_lossy(req)
                 );
                 return Ok(vec![]);
             } else {
@@ -79,7 +85,7 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
     }
 
     fn get_class_specific_descriptor(&self) -> Vec<u8> {
-        return vec![
+        vec![
             // Header
             0x05, // bFunctionLength
             0x24, // CS_INTERFACE
@@ -90,7 +96,7 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
             0x24, // CS_INTERFACE
             0x02, // ACM
             0x00, // Capabilities
-        ];
+        ]
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

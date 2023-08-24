@@ -135,7 +135,7 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
     }
 
     fn get_class_specific_descriptor(&self) -> Vec<u8> {
-        return vec![
+        vec![
             0x09,                         // bLength
             HidDescriptorType::Hid as u8, // bDescriptorType: HID
             0x11,
@@ -145,7 +145,7 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
             HidDescriptorType::Report as u8, // bDescriptorType[0] HID
             self.report_descriptor.len() as u8,
             (self.report_descriptor.len() >> 8) as u8, // wDescriptorLength[0]
-        ];
+        ]
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

@@ -509,7 +509,7 @@ mod test {
         if result == 0 {
             connection.read_exact(&mut vec![0; 0x138]).await.unwrap();
         }
-        return result;
+        result
     }
 
     #[tokio::test]
@@ -536,7 +536,7 @@ mod test {
         // header: 0xC
         // device: 0x138
         // interface: 4 * 0x1
-        assert_eq!(mock_socket.output.len(), 0xC + 0x138 + 4 * 0x1);
+        assert_eq!(mock_socket.output.len(), 0xC + 0x138 + 4);
     }
 
     #[tokio::test]
@@ -694,9 +694,9 @@ mod test {
             0x00, 0x00, 0x00, 0x00, // padding
         ];
         connection.write_all(unlink_req.as_slice()).await.unwrap();
-        connection.read_exact(&mut vec![0; 4 * 5]).await.unwrap();
+        connection.read_exact(&mut [0; 4 * 5]).await.unwrap();
         let result = connection.read_u32().await.unwrap();
-        connection.read_exact(&mut vec![0; 4 * 6]).await.unwrap();
+        connection.read_exact(&mut [0; 4 * 6]).await.unwrap();
         assert_eq!(result, 0);
 
         let result = attach_device(&mut connection, 0).await;

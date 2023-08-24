@@ -84,7 +84,7 @@ impl UsbInterfaceHandler for UsbHostInterfaceHandler {
     }
 
     fn get_class_specific_descriptor(&self) -> Vec<u8> {
-        return vec![];
+        vec![]
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
