@@ -21,15 +21,10 @@ pub fn verify_descriptor(desc: &[u8]) {
 }
 
 pub fn str_eq(a: &[u8], b: &[u8]) -> bool {
-    for (x, y) in a.iter().chain([0].iter()).zip(b.iter().chain([0].iter())) {
-        if x != y {
-            return false;
-        }
-        if *x == 0 {
-            return true;
-        }
-    }
-    unreachable!()
+    let a_idx = a.iter().position(|&x| x == 0).unwrap_or(a.len());
+    let b_idx = b.iter().position(|&x| x == 0).unwrap_or(b.len());
+
+    a[..a_idx] == b[..b_idx]
 }
 
 #[cfg(test)]
