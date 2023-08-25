@@ -2,10 +2,10 @@ use super::*;
 
 pub(crate) async fn socket_write_fixed_string<T: AsyncReadExt + AsyncWriteExt + Unpin>(
     socket: &mut T,
-    s: &String,
+    s: &str,
     len: usize,
 ) -> Result<()> {
-    let mut path = s.clone().into_bytes();
+    let mut path = s.as_bytes().to_vec();
     assert!(path.len() <= len);
     path.resize(len, 0);
     socket.write_all(&path).await

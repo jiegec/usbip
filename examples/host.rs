@@ -1,8 +1,6 @@
-use env_logger;
 use std::net::*;
 use std::sync::Arc;
 use std::time::Duration;
-use usbip;
 
 #[tokio::main]
 async fn main() {

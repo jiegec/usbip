@@ -17,6 +17,8 @@ jobs:
         components: rustfmt, clippy
     - name: Check code format
       run: cargo fmt -- --check
+    - name: Check clippy
+      run: cargo clippy -- --deny warnings
     - name: Build
       run: cargo build --verbose
     - uses: actions-rs/cargo@v1
