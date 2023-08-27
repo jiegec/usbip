@@ -57,6 +57,7 @@ pub use rusb::Direction;
 pub const EP0_MAX_PACKET_SIZE: u16 = 64;
 
 /// A list of defined USB standard requests
+/// from USB 2.0 standard Table 9.4. Standard Request Codes
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum StandardRequest {
     GetStatus = 0,
@@ -73,6 +74,7 @@ pub enum StandardRequest {
 }
 
 /// A list of defined USB descriptor types
+/// from USB 2.0 standard Table 9.5. Descriptor Types
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum DescriptorType {
     Device = 1,
