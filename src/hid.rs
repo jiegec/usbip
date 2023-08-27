@@ -93,11 +93,11 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
         setup: SetupPacket,
         _req: &[u8],
     ) -> Result<Vec<u8>> {
-        use StandardRequest::*;
         if ep.is_ep0() {
             // control transfers
-            match (setup.request_type, FromPrimitive::from_u8(setup.request)) {
-                (0b10000001, Some(GetDescriptor)) => {
+            match (setup.request_type, setup.request) {
+                (0b10000001, 0x06) => {
+                    // GET_DESCRIPTOR
                     // high byte: type
                     match FromPrimitive::from_u16(setup.value >> 8) {
                         Some(HidDescriptorType::Report) => {
@@ -105,6 +105,10 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
                         }
                         _ => unimplemented!("hid descriptor {:?}", setup),
                     }
+                }
+                (0b00100001, 0x0A) => {
+                    // SET_IDLE
+                    return Ok(vec![]);
                 }
                 _ => unimplemented!("hid request {:?}", setup),
             }
