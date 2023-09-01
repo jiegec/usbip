@@ -5,25 +5,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
     - name: Build
       run: cargo build --verbose
 
   check:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
       with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-        components: rustfmt, clippy
+        components: clippy, rustfmt
     - name: Check code format
       run: cargo fmt -- --check
     - name: Check clippy
@@ -38,15 +31,10 @@ jobs:
           - os: ubuntu-latest
           - os: windows-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
-    - uses: actions-rs/cargo@v1
-      with:
-        command: test
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Run tests
+      run: cargo test
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -61,7 +49,7 @@ jobs:
   benchmarks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
@@ -73,11 +61,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-        override: true
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
     - name: Build docs
       run: cargo doc --verbose
