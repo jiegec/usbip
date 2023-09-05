@@ -90,4 +90,8 @@ pub(crate) mod tests {
             }
         }
     }
+
+    pub(crate) fn setup_test_logger() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
 }

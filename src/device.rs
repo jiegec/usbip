@@ -484,10 +484,13 @@ pub trait UsbDeviceHandler {
 
 #[cfg(test)]
 mod test {
+    use crate::util::tests::*;
+
     use super::*;
 
     #[test]
     fn test_set_string_descriptors() {
+        setup_test_logger();
         let mut device = UsbDevice::new(0);
 
         assert_eq!(device.string_pool.len(), 4);
