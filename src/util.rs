@@ -1,16 +1,3 @@
-use super::*;
-
-pub(crate) async fn socket_write_fixed_string<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-    socket: &mut T,
-    s: &str,
-    len: usize,
-) -> Result<()> {
-    let mut path = s.as_bytes().to_vec();
-    assert!(path.len() <= len);
-    path.resize(len, 0);
-    socket.write_all(&path).await
-}
-
 /// Check validity of a USB descriptor
 pub fn verify_descriptor(desc: &[u8]) {
     let mut offset = 0;
