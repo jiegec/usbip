@@ -1,5 +1,8 @@
+use super::*;
+
 /// Parse the SETUP packet of control transfers
 #[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SetupPacket {
     /// bmRequestType
     pub request_type: u8,

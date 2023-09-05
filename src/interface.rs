@@ -2,6 +2,7 @@ use super::*;
 
 /// Represent a USB interface
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct UsbInterface {
     pub interface_class: u8,
     pub interface_subclass: u8,
@@ -9,6 +10,8 @@ pub struct UsbInterface {
     pub endpoints: Vec<UsbEndpoint>,
     pub string_interface: u8,
     pub class_specific_descriptor: Vec<u8>,
+
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub handler: Arc<Mutex<Box<dyn UsbInterfaceHandler + Send>>>,
 }
 

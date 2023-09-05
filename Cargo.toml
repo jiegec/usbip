@@ -15,7 +15,12 @@ log = "0.4.17"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
 rusb = "0.9.3"
+serde = { version = "1.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.22.0", features = ["full"] }
 env_logger = "0.9.0"
+
+[features]
+default = []
+serde = ["dep:serde", "rusb/serde"]
