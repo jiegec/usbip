@@ -54,13 +54,32 @@ impl UsbIpServer {
             let open_device = match dev.open() {
                 Ok(dev) => dev,
                 Err(err) => {
-                    warn!("Impossible to share {:?}: {}", dev, err);
+                    warn!("Impossible to share {:?}: {}, ignoring device", dev, err);
                     continue;
                 }
             };
+            let desc = match dev.device_descriptor() {
+                Ok(desc) => desc,
+                Err(err) => {
+                    warn!(
+                        "Impossible to get device descriptor for {:?}: {}, ignoring device",
+                        dev, err
+                    );
+                    continue;
+                }
+            };
+            let cfg = match dev.active_config_descriptor() {
+                Ok(desc) => desc,
+                Err(err) => {
+                    warn!(
+                        "Impossible to get config descriptor for {:?}: {}, ignoring device",
+                        dev, err
+                    );
+                    continue;
+                }
+            };
+
             let handle = Arc::new(Mutex::new(open_device));
-            let desc = dev.device_descriptor().unwrap();
-            let cfg = dev.active_config_descriptor().unwrap();
             let mut interfaces = vec![];
             handle
                 .lock()
