@@ -9,7 +9,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
     - uses: Swatinem/rust-cache@v2
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --all-features --verbose
 
   check:
     runs-on: ubuntu-latest
@@ -22,7 +22,7 @@ jobs:
     - name: Check code format
       run: cargo fmt -- --check
     - name: Check clippy
-      run: cargo clippy -- --deny warnings
+      run: cargo clippy --all-features -- --deny warnings
 
   test:
     runs-on: '${{ matrix.os }}'
@@ -37,7 +37,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
     - uses: Swatinem/rust-cache@v2
     - name: Run tests
-      run: cargo test
+      run: cargo test --all-features
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
