@@ -15,9 +15,10 @@ pub(crate) mod tests {
         pin::Pin,
         task::{Context, Poll},
     };
+    use log::{info, trace};
     use tokio::{
         io::{AsyncRead, AsyncWrite, ReadBuf},
-        net::{TcpListener, TcpStream},
+        net::{TcpListener, TcpStream}, time,
     };
 
     pub(crate) struct MockSocket {
@@ -71,14 +72,21 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn poll_connect(addr: SocketAddr) -> TcpStream {
-        loop {
+        for _ in 0..1000 {
+            trace!("Trying to connect to {:?}", addr);
+
             if let Ok(stream) = TcpStream::connect(addr).await {
                 return stream;
             }
+
+            trace!("Failed to connect to {:?}, retrying in 10ms", addr);
+            time::sleep(time::Duration::from_millis(10)).await;
         }
+        panic!("Could not connect to socket in 1000 tries, assuming test failure")
     }
 
     pub(crate) fn setup_test_logger() {
         let _ = env_logger::builder().is_test(true).try_init();
+        info!("Successfully initialized test env logger");
     }
 }
