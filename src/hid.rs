@@ -167,10 +167,13 @@ pub enum HidDescriptorType {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::tests::*;
+
     use super::*;
 
     #[test]
     fn desc_verify() {
+        setup_test_logger();
         let handler = UsbHidKeyboardHandler::new_keyboard();
         verify_descriptor(&handler.get_class_specific_descriptor());
     }

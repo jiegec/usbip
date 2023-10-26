@@ -57,8 +57,8 @@ pub struct UsbDevice {
 impl UsbDevice {
     pub fn new(index: u32) -> Self {
         let mut res = Self {
-            path: format!("/sys/device/usbip/{}", index),
-            bus_id: format!("{}", index),
+            path: "/sys/bus/0/0/0".to_string(),
+            bus_id: "0-0-0".to_string(),
             dev_num: index,
             speed: UsbSpeed::High as u32,
             ep0_in: UsbEndpoint {
@@ -167,46 +167,48 @@ impl UsbDevice {
         }
     }
 
-    pub(crate) async fn write_dev<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-        &self,
-        socket: &mut T,
-    ) -> Result<()> {
-        socket_write_fixed_string(socket, &self.path, 256).await?;
-        socket_write_fixed_string(socket, &self.bus_id, 32).await?;
+    pub(crate) fn to_bytes(&self) -> Vec<u8> {
+        let mut result = Vec::with_capacity(312);
 
-        // fields
-        socket.write_u32(self.bus_num).await?;
-        socket.write_u32(self.dev_num).await?;
-        socket.write_u32(self.speed).await?;
-        socket.write_u16(self.vendor_id).await?;
-        socket.write_u16(self.product_id).await?;
-        socket
-            .write_u16((self.device_bcd.major as u16) << 8 | self.device_bcd.minor as u16)
-            .await?;
-        socket.write_u8(self.device_class).await?;
-        socket.write_u8(self.device_subclass).await?;
-        socket.write_u8(self.device_protocol).await?;
-        socket.write_u8(self.configuration_value).await?;
-        socket.write_u8(self.num_configurations).await?;
-        socket.write_u8(self.interfaces.len() as u8).await?;
+        let mut path = self.path.as_bytes().to_vec();
+        debug_assert!(path.len() <= 256);
+        path.resize(256, 0);
+        result.extend_from_slice(path.as_slice());
 
-        Ok(())
+        let mut bus_id = self.bus_id.as_bytes().to_vec();
+        debug_assert!(bus_id.len() <= 32);
+        bus_id.resize(32, 0);
+        result.extend_from_slice(bus_id.as_slice());
+
+        result.extend_from_slice(&self.bus_num.to_be_bytes());
+        result.extend_from_slice(&self.dev_num.to_be_bytes());
+        result.extend_from_slice(&self.speed.to_be_bytes());
+        result.extend_from_slice(&self.vendor_id.to_be_bytes());
+        result.extend_from_slice(&self.product_id.to_be_bytes());
+        result.push(self.device_bcd.major);
+        result.push(self.device_bcd.minor);
+        result.push(self.device_class);
+        result.push(self.device_subclass);
+        result.push(self.device_protocol);
+        result.push(self.configuration_value);
+        result.push(self.num_configurations);
+        result.push(self.interfaces.len() as u8);
+
+        result
     }
 
-    pub(crate) async fn write_dev_with_interfaces<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-        &self,
-        socket: &mut T,
-    ) -> Result<()> {
-        self.write_dev(socket).await?;
+    pub(crate) fn to_bytes_with_interfaces(&self) -> Vec<u8> {
+        let mut result = self.to_bytes();
+        result.reserve(4 * self.interfaces.len());
 
-        for interface in &self.interfaces {
-            socket.write_u8(interface.interface_class).await?;
-            socket.write_u8(interface.interface_subclass).await?;
-            socket.write_u8(interface.interface_protocol).await?;
-            // padding
-            socket.write_u8(0).await?;
+        for intf in &self.interfaces {
+            result.push(intf.interface_class);
+            result.push(intf.interface_subclass);
+            result.push(intf.interface_protocol);
+            result.push(0); // padding
         }
-        Ok(())
+
+        result
     }
 
     pub(crate) async fn handle_urb(
@@ -484,10 +486,13 @@ pub trait UsbDeviceHandler {
 
 #[cfg(test)]
 mod test {
+    use crate::util::tests::*;
+
     use super::*;
 
     #[test]
     fn test_set_string_descriptors() {
+        setup_test_logger();
         let mut device = UsbDevice::new(0);
 
         assert_eq!(device.string_pool.len(), 4);
