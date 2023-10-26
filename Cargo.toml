@@ -15,6 +15,8 @@ log = "0.4.17"
 num-traits = "0.2.15"
 num-derive = "0.3.3"
 rusb = "0.9.1"
+async-trait = "0.1.73"
+async-scoped = { version = "0.7.1", features = ["use-tokio"] }
 
 [dev-dependencies]
 tokio = { version = "1.22.0", features = ["full"] }
