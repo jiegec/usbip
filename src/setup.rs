@@ -1,4 +1,5 @@
-use super::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// Parse the SETUP packet of control transfers
 #[derive(Clone, Copy, Debug, Default)]
