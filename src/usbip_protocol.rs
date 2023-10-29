@@ -9,6 +9,9 @@
 use std::io::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::UsbDevice;
 
 /// USB/IP protocol version
@@ -40,6 +43,7 @@ pub const USBIP_RET_UNLINK: u16 = 0x0004;
 /// All commands/responses which rely on a device being attached
 /// to a client use this header.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UsbIpHeaderBasic {
     pub command: u32,
     pub seqnum: u32,
@@ -97,6 +101,7 @@ impl UsbIpHeaderBasic {
 
 /// Client side commands from the Virtual Host Controller
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UsbIpCommand {
     OpReqDevlist {
         status: u32,
@@ -272,6 +277,7 @@ impl UsbIpCommand {
 
 /// Server side responses from the USB Host
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub enum UsbIpResponse {
     OpRepDevlist {
         status: u32,
