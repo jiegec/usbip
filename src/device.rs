@@ -2,6 +2,7 @@ use super::*;
 use rusb::Version as rusbVersion;
 
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Version {
     pub major: u8,
     pub minor: u8,
@@ -26,6 +27,7 @@ impl From<Version> for rusbVersion {
 
 /// Represent a USB device
 #[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct UsbDevice {
     pub path: String,
     pub bus_id: String,
@@ -41,7 +43,10 @@ pub struct UsbDevice {
     pub configuration_value: u8,
     pub num_configurations: u8,
     pub interfaces: Vec<UsbInterface>,
+
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub device_handler: Option<Arc<Mutex<Box<dyn UsbDeviceHandler + Send>>>>,
+
     pub usb_version: Version,
 
     pub(crate) ep0_in: UsbEndpoint,

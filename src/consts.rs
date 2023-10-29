@@ -2,6 +2,7 @@ use super::*;
 
 /// A list of known USB speeds
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UsbSpeed {
     Unknown = 0x0,
     Low,
@@ -15,6 +16,7 @@ pub enum UsbSpeed {
 /// A list of defined USB class codes
 // https://www.usb.org/defined-class-codes
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ClassCode {
     SeeInterface = 0,
     Audio,
@@ -42,6 +44,7 @@ pub enum ClassCode {
 
 /// A list of defined USB endpoint attributes
 #[derive(Copy, Clone, Debug, FromPrimitive)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum EndpointAttributes {
     Control = 0,
     Isochronous,
@@ -59,6 +62,7 @@ pub const EP0_MAX_PACKET_SIZE: u16 = 64;
 /// A list of defined USB standard requests
 /// from USB 2.0 standard Table 9.4. Standard Request Codes
 #[derive(Copy, Clone, Debug, FromPrimitive)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum StandardRequest {
     GetStatus = 0,
     ClearFeature = 1,
@@ -76,6 +80,7 @@ pub enum StandardRequest {
 /// A list of defined USB descriptor types
 /// from USB 2.0 standard Table 9.5. Descriptor Types
 #[derive(Copy, Clone, Debug, FromPrimitive)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DescriptorType {
     Device = 1,
     Configuration = 2,

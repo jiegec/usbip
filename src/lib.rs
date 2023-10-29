@@ -15,6 +15,9 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use usbip_protocol::UsbIpCommand;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 pub mod cdc;
 mod consts;
 mod device;

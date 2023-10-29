@@ -6,6 +6,7 @@ use super::*;
 // HID Usage Tables 1.12: https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 enum UsbHidKeyboardHandlerState {
     Idle,
     KeyDown,
@@ -13,6 +14,7 @@ enum UsbHidKeyboardHandlerState {
 
 /// A handler of a HID keyboard
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UsbHidKeyboardHandler {
     pub report_descriptor: Vec<u8>,
     pub pending_key_events: VecDeque<UsbHidKeyboardReport>,
@@ -23,6 +25,7 @@ pub struct UsbHidKeyboardHandler {
 ///
 /// For definition of key codes, see [HID Usage Tables](https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf)
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UsbHidKeyboardReport {
     /// Key modifier
     pub modifier: u8,
@@ -159,6 +162,7 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
 
 /// A list of defined HID descriptor type
 #[derive(Copy, Clone, Debug, FromPrimitive)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HidDescriptorType {
     Hid = 0x21,
     Report = 0x22,
