@@ -20,13 +20,6 @@ pub fn verify_descriptor(desc: &[u8]) {
     assert_eq!(offset, desc.len());
 }
 
-pub fn str_eq(a: &[u8], b: &[u8]) -> bool {
-    let a_idx = a.iter().position(|&x| x == 0).unwrap_or(a.len());
-    let b_idx = b.iter().position(|&x| x == 0).unwrap_or(b.len());
-
-    a[..a_idx] == b[..b_idx]
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use std::{

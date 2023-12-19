@@ -240,11 +240,10 @@ async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 let _status = socket.read_u32().await?;
                 let mut bus_id = [0u8; 32];
                 socket.read_exact(&mut bus_id).await?;
+                let bus_id_compare = &bus_id[..bus_id.iter().position(|&x| x == 0).unwrap_or(bus_id.len())];
                 current_import_device = None;
                 for device in &server.devices {
-                    let mut expected = device.bus_id.as_bytes().to_vec();
-                    expected.resize(32, 0);
-                    if str_eq(&expected, &bus_id) {
+                    if bus_id_compare == device.bus_id.as_bytes() {
                         current_import_device = Some(device);
                         info!("Found device {:?}", device.path);
                         break;
