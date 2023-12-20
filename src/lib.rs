@@ -319,7 +319,8 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
 
                 let mut used_devices = server.used_devices.write().await;
                 let mut available_devices = server.available_devices.write().await;
-                let busid_compare = &busid[..busid.iter().position(|&x| x == 0).unwrap_or(busid.len())];
+                let busid_compare =
+                    &busid[..busid.iter().position(|&x| x == 0).unwrap_or(busid.len())];
                 for (i, dev) in available_devices.iter().enumerate() {
                     if busid_compare == dev.bus_id.as_bytes() {
                         let dev = available_devices.remove(i);
