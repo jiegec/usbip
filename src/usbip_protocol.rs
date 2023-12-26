@@ -6,6 +6,7 @@
 //!
 //! They are based on the [Linux kernel documentation](https://docs.kernel.org/usb/usbip_protocol.html).
 
+use log::trace;
 use std::io::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -142,6 +143,18 @@ impl UsbIpCommand {
                 format!("Unknown version: {:#04X}", version),
             ));
         }
+
+        trace!(
+            "Received command: {:#04X} ({}), parsing...",
+            command,
+            match command {
+                OP_REQ_DEVLIST => "OP_REQ_DEVLIST",
+                OP_REQ_IMPORT => "OP_REQ_IMPORT",
+                USBIP_CMD_SUBMIT => "USBIP_CMD_SUBMIT",
+                USBIP_CMD_UNLINK => "USBIP_CMD_UNLINK",
+                _ => "Unknown",
+            }
+        );
 
         match command {
             OP_REQ_DEVLIST => {
