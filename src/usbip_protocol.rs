@@ -6,6 +6,7 @@
 //!
 //! They are based on the [Linux kernel documentation](https://docs.kernel.org/usb/usbip_protocol.html).
 
+use log::trace;
 use std::io::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -37,6 +38,17 @@ pub const USBIP_CMD_UNLINK: u16 = 0x0002;
 pub const USBIP_RET_SUBMIT: u16 = 0x0003;
 /// Reply code: Reply for URB unlink
 pub const USBIP_RET_UNLINK: u16 = 0x0004;
+
+/// USB/IP direction
+///
+/// NOTE: Must not be confused with rusb::Direction,
+/// which has the opposite enum values. This is only for
+/// internal use in the USB/IP protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    Out = 0,
+    In = 1,
+}
 
 /// Common header for all context sensitive packets
 ///
@@ -134,7 +146,6 @@ impl UsbIpCommand {
     /// It might fail if the bytes does not follow the USB/IP protocol properly.
     pub async fn read_from_socket<T: AsyncReadExt + Unpin>(socket: &mut T) -> Result<UsbIpCommand> {
         let version: u16 = socket.read_u16().await?;
-        let command: u16 = socket.read_u16().await?;
 
         if version != 0 && version != USBIP_VERSION {
             return Err(std::io::Error::new(
@@ -142,6 +153,20 @@ impl UsbIpCommand {
                 format!("Unknown version: {:#04X}", version),
             ));
         }
+
+        let command: u16 = socket.read_u16().await?;
+
+        trace!(
+            "Received command: {:#04X} ({}), parsing...",
+            command,
+            match command {
+                OP_REQ_DEVLIST => "OP_REQ_DEVLIST",
+                OP_REQ_IMPORT => "OP_REQ_IMPORT",
+                USBIP_CMD_SUBMIT => "USBIP_CMD_SUBMIT",
+                USBIP_CMD_UNLINK => "USBIP_CMD_UNLINK",
+                _ => "Unknown",
+            }
+        );
 
         match command {
             OP_REQ_DEVLIST => {
@@ -171,8 +196,13 @@ impl UsbIpCommand {
                 let mut setup = [0; 8];
                 socket.read_exact(&mut setup).await?;
 
-                let mut data = vec![0; transfer_buffer_length as usize];
-                socket.read_exact(&mut data).await?;
+                let data = if header.direction == Direction::In as u32 {
+                    vec![]
+                } else {
+                    let mut data = vec![0; transfer_buffer_length as usize];
+                    socket.read_exact(&mut data).await?;
+                    data
+                };
 
                 // The kernel docs specifies that this should be set to 0xFFFFFFFF for all
                 // non-ISO packets, however the actual implementation resorts to 0x00000000
@@ -248,8 +278,12 @@ impl UsbIpCommand {
                 ref data,
                 ref iso_packet_descriptor,
             } => {
-                let mut result = Vec::with_capacity(48 + data.len());
-                debug_assert!(transfer_buffer_length == data.len() as u32);
+                debug_assert!(
+                    header.direction != Direction::Out as u32
+                        || transfer_buffer_length == data.len() as u32
+                );
+
+                let mut result = Vec::with_capacity(48 + data.len() + iso_packet_descriptor.len());
                 result.extend_from_slice(&header.to_bytes());
                 result.extend_from_slice(&transfer_flags.to_be_bytes());
                 result.extend_from_slice(&transfer_buffer_length.to_be_bytes());
@@ -353,6 +387,11 @@ impl UsbIpResponse {
                     Vec::with_capacity(48 + transfer_buffer.len() + iso_packet_descriptor.len());
 
                 debug_assert!(header.command == USBIP_RET_SUBMIT.into());
+                debug_assert!(if header.direction == Direction::In as u32 {
+                    actual_length == transfer_buffer.len() as u32
+                } else {
+                    actual_length == 0
+                });
 
                 result.extend_from_slice(&header.to_bytes());
                 result.extend_from_slice(&status.to_be_bytes());
@@ -635,11 +674,11 @@ mod tests {
                 command: USBIP_RET_SUBMIT.into(),
                 seqnum: 2,
                 devid: 3,
-                direction: 0,
+                direction: Direction::In as u32,
                 ep: 4,
             },
             status: 5,
-            actual_length: 6,
+            actual_length: 4,
             start_frame: 7,
             number_of_packets: 8,
             error_count: 9,
@@ -653,10 +692,10 @@ mod tests {
                 0x00, 0x00, 0x00, 0x03, // command
                 0x00, 0x00, 0x00, 0x02, // seqnum
                 0x00, 0x00, 0x00, 0x03, // devid
-                0x00, 0x00, 0x00, 0x00, // direction
+                0x00, 0x00, 0x00, 0x01, // direction
                 0x00, 0x00, 0x00, 0x04, // ep
                 0x00, 0x00, 0x00, 0x05, // status
-                0x00, 0x00, 0x00, 0x06, // actual_length
+                0x00, 0x00, 0x00, 0x04, // actual_length
                 0x00, 0x00, 0x00, 0x07, // start_frame
                 0x00, 0x00, 0x00, 0x08, // number_of_packets
                 0x00, 0x00, 0x00, 0x09, // error_count
@@ -667,6 +706,30 @@ mod tests {
                       // iso_packet_descriptor
             ],
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn byte_serialize_invalid_usbip_ret_submit() {
+        setup_test_logger();
+        let res = UsbIpResponse::UsbIpRetSubmit {
+            header: UsbIpHeaderBasic {
+                command: USBIP_RET_SUBMIT.into(),
+                seqnum: 2,
+                devid: 3,
+                direction: Direction::Out as u32, // data section should be empty, but is not
+                ep: 4,
+            },
+            status: 5,
+            actual_length: 4,
+            start_frame: 7,
+            number_of_packets: 8,
+            error_count: 9,
+            transfer_buffer: vec![0xFF; 4],
+            iso_packet_descriptor: vec![0xFF; 16],
+        };
+
+        res.to_bytes();
     }
 
     #[test]
@@ -755,7 +818,7 @@ mod tests {
                 command: USBIP_CMD_SUBMIT.into(),
                 seqnum: 1,
                 devid: 2,
-                direction: 0,
+                direction: Direction::Out as u32,
                 ep: 4,
             },
             transfer_flags: 5,
@@ -765,6 +828,37 @@ mod tests {
             interval: 9,
             setup: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
             data: vec![0x08, 0x09, 0x0A, 0x0B],
+            iso_packet_descriptor: vec![0xFF; 16],
+        };
+
+        assert_eq!(
+            cmd.to_bytes(),
+            UsbIpCommand::read_from_socket(&mut MockSocket::new(cmd.to_bytes()))
+                .await?
+                .to_bytes()
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn read_usbip_cmd_submit_from_socket_with_no_data() -> Result<()> {
+        setup_test_logger();
+        let cmd = UsbIpCommand::UsbIpCmdSubmit {
+            header: UsbIpHeaderBasic {
+                command: USBIP_CMD_SUBMIT.into(),
+                seqnum: 1,
+                devid: 2,
+                direction: Direction::In as u32, // data section should be ignored despite transfer_buffer_length
+                ep: 4,
+            },
+            transfer_flags: 5,
+            transfer_buffer_length: 64,
+            start_frame: 7,
+            number_of_packets: 1,
+            interval: 9,
+            setup: [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xFF],
+            data: vec![],
             iso_packet_descriptor: vec![0xFF; 16],
         };
 
