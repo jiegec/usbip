@@ -1,6 +1,6 @@
 [package]
 name = "usbip"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Jiajie Chen <c@jia.je>"]
 edition = "2021"
 license = "MIT"
