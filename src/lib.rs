@@ -388,32 +388,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
             }
             UsbIpCommand::UsbIpCmdUnlink {
                 mut header,
-                unlink_seqnum: _,
+                unlink_seqnum,
             } => {
-                trace!("Got USBIP_CMD_UNLINK");
-
-                std::mem::drop(used_devices);
-
-                let mut used_devices = server.used_devices.write().await;
-                let mut available_devices = server.available_devices.write().await;
-
-                let dev = current_import_device_id
-                    .clone()
-                    .and_then(|ref k| used_devices.remove(k));
+                trace!("Got USBIP_CMD_UNLINK for {:10x?}", unlink_seqnum);
 
                 header.command = USBIP_RET_UNLINK.into();
 
-                let res = match dev {
-                    Some(dev) => {
-                        available_devices.push(dev);
-                        current_import_device_id = None;
-                        UsbIpResponse::usbip_ret_unlink_success(&header)
-                    }
-                    None => {
-                        warn!("Device not found");
-                        UsbIpResponse::usbip_ret_unlink_fail(&header)
-                    }
-                };
+                let res = UsbIpResponse::usbip_ret_unlink_success(&header);
                 res.write_to_socket(socket).await?;
                 trace!("Sent USBIP_RET_UNLINK");
             }
@@ -452,7 +433,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        usbip_protocol::{UsbIpHeaderBasic, USBIP_CMD_SUBMIT, USBIP_CMD_UNLINK},
+        usbip_protocol::{UsbIpHeaderBasic, USBIP_CMD_SUBMIT},
         util::tests::*,
     };
 
@@ -656,41 +637,6 @@ mod tests {
 
         let result = attach_device(&mut second_connection, SINGLE_DEVICE_BUSID).await;
         assert_eq!(result, 1);
-    }
-
-    #[tokio::test]
-    async fn device_gets_released_on_cmd_unlink() {
-        setup_test_logger();
-        let server_ = Arc::new(new_server_with_single_device());
-
-        let addr = get_free_address().await;
-        tokio::spawn(server(addr, server_.clone()));
-
-        let mut connection = poll_connect(addr).await;
-
-        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
-        assert_eq!(result, 0);
-
-        let unlink_req = UsbIpCommand::UsbIpCmdUnlink {
-            header: UsbIpHeaderBasic {
-                command: USBIP_CMD_UNLINK.into(),
-                seqnum: 1,
-                devid: 0,
-                direction: 0,
-                ep: 0,
-            },
-            unlink_seqnum: 0,
-        }
-        .to_bytes();
-
-        connection.write_all(unlink_req.as_slice()).await.unwrap();
-        connection.read_exact(&mut [0; 4 * 5]).await.unwrap();
-        let result = connection.read_u32().await.unwrap();
-        connection.read_exact(&mut [0; 4 * 6]).await.unwrap();
-        assert_eq!(result, 0);
-
-        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
-        assert_eq!(result, 0);
     }
 
     #[tokio::test]
