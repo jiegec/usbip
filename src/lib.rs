@@ -372,15 +372,22 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                                 SetupPacket::parse(&setup),
                                 &data,
                             )
-                            .await?;
+                            .await;
 
-                        if out {
-                            trace!("<-Wrote {}", data.len());
-                        } else {
-                            trace!("<-Resp {:02x?}", resp);
+                        match resp {
+                            Ok(resp) => {
+                                if out {
+                                    trace!("<-Wrote {}", data.len());
+                                } else {
+                                    trace!("<-Resp {:02x?}", resp);
+                                }
+                                UsbIpResponse::usbip_ret_submit_success(&header, 0, 0, resp, vec![])
+                            }
+                            Err(err) => {
+                                warn!("Error handling URB: {}", err);
+                                UsbIpResponse::usbip_ret_submit_fail(&header)
+                            }
                         }
-
-                        UsbIpResponse::usbip_ret_submit_success(&header, 0, 0, resp, vec![])
                     }
                 };
                 res.write_to_socket(socket).await?;

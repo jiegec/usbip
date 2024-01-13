@@ -354,11 +354,10 @@ impl UsbDevice {
                                         desc.resize(setup_packet.length as usize, 0);
                                     }
                                     Ok(desc)
-                                } else {
-                                    let s = &self.string_pool[&index];
+                                } else if let Some(s) = &self.string_pool.get(&index) {
                                     let bytes: Vec<u16> = s.encode_utf16().collect();
                                     let mut desc = vec![
-                                        (2 + bytes.len() * 2) as u8,  // bLength
+                                        2 + bytes.len() as u8 * 2,    // bLength
                                         DescriptorType::String as u8, // bDescriptorType
                                     ];
                                     for byte in bytes {
@@ -371,6 +370,11 @@ impl UsbDevice {
                                         desc.resize(setup_packet.length as usize, 0);
                                     }
                                     Ok(desc)
+                                } else {
+                                    Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidInput,
+                                        format!("Invalid string index: {}", index),
+                                    ))
                                 }
                             }
                             Some(DeviceQualifier) => {
@@ -513,5 +517,34 @@ mod test {
         assert_eq!(device.string_pool[&2], "test");
         assert_eq!(device.string_pool[&3], "test");
         assert_eq!(device.string_pool[&4], "test");
+    }
+
+    #[tokio::test]
+    async fn test_invalid_string_index() {
+        setup_test_logger();
+        let device = UsbDevice::new(0);
+        let res = device
+            .handle_urb(
+                UsbEndpoint {
+                    address: 0x80, // IN
+                    attributes: EndpointAttributes::Control as u8,
+                    max_packet_size: EP0_MAX_PACKET_SIZE,
+                    interval: 0,
+                },
+                None,
+                0,
+                SetupPacket {
+                    request_type: 0b10000000,
+                    request: StandardRequest::GetDescriptor as u8,
+                    // string pool only contains 4 strings, 5 should be invalid
+                    value: (DescriptorType::String as u16) << 8 | 5,
+                    index: 0,
+                    length: 0,
+                },
+                &[],
+            )
+            .await;
+
+        assert!(res.is_err());
     }
 }
