@@ -46,6 +46,19 @@ pub struct UsbIpServer {
 }
 
 impl UsbIpServer {
+    /// Create a [UsbIpServer] from an rusb DeviceHandle
+    pub fn new_from_device_handle(device_handle: DeviceHandle<GlobalContext>) -> Self {
+        let device = device_handle.device();
+        let device_descriptor = device.device_descriptor().unwrap();
+        let active_configuration_descriptor = device.active_config_descriptor().unwrap();
+        let usb_device = Self::rusb_device_to_usbip_device(device, device_handle, device_descriptor, active_configuration_descriptor);
+        let devices = vec![usb_device];
+        Self {
+            available_devices: RwLock::new(devices),
+            used_devices: RwLock::new(HashMap::new()),
+        }
+    }
+
     /// Create a [UsbIpServer] with simulated devices
     pub fn new_simulated(devices: Vec<UsbDevice>) -> Self {
         Self {
@@ -245,13 +258,6 @@ impl UsbIpServer {
 
     pub async fn add_device(&self, device: UsbDevice) {
         self.available_devices.write().await.push(device);
-    }
-
-    pub async fn add_device_from_device_handle(&self, device_handle: DeviceHandle<GlobalContext>) {
-        let device = device_handle.device();
-        let device_descriptor = device.device_descriptor().unwrap();
-        let active_configuration_descriptor = device.active_config_descriptor().unwrap();
-        self.available_devices.write().await.push(Self::rusb_device_to_usbip_device(device, device_handle, device_descriptor, active_configuration_descriptor));
     }
 
     pub async fn remove_device(&self, bus_id: &str) -> Result<()> {
