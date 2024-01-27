@@ -1,4 +1,6 @@
 //! Host USB
+use rusb::DeviceHandle;
+
 use super::*;
 
 /// A handler to pass requests to a USB device of the host
