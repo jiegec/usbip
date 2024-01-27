@@ -3,7 +3,7 @@
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use rusb::{ConfigDescriptor, Device, DeviceDescriptor, DeviceHandle, GlobalContext};
+use rusb::*;
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Result};
