@@ -83,35 +83,39 @@ impl UsbDevice {
             num_configurations: 1,
             ..Self::default()
         };
-        res.string_configuration = res.new_string("Default Configuration");
-        res.string_manufacturer = res.new_string("Manufacturer");
-        res.string_product = res.new_string("Product");
-        res.string_serial = res.new_string("Serial");
+        res.string_configuration = 0;
+        res.string_manufacturer = 0;
+        res.string_product = 0;
+        res.string_serial = 0;
         res
     }
 
     /// Returns the old value, if present.
-    pub fn set_configuration_name(&mut self, name: &str) -> Option<String> {
-        self.string_pool
-            .insert(self.string_configuration, name.to_string())
+    pub fn set_configuration_name(&mut self, name: Option<&str>) -> Option<String> {
+        let old = (self.string_configuration != 0).then(|| self.string_pool.remove(&self.string_configuration)).flatten();
+        self.string_configuration = name.map(|name| self.new_string(name)).unwrap_or(0);
+        old
     }
 
     /// Returns the old value, if present.
-    pub fn set_serial_number(&mut self, name: &str) -> Option<String> {
-        self.string_pool
-            .insert(self.string_serial, name.to_string())
+    pub fn set_serial_number(&mut self, name: Option<&str>) -> Option<String> {
+        let old = (self.string_serial != 0).then(|| self.string_pool.remove(&self.string_serial)).flatten();
+        self.string_serial = name.map(|name| self.new_string(name)).unwrap_or(0);
+        old
     }
 
     /// Returns the old value, if present.
-    pub fn set_product_name(&mut self, name: &str) -> Option<String> {
-        self.string_pool
-            .insert(self.string_product, name.to_string())
+    pub fn set_product_name(&mut self, name: Option<&str>) -> Option<String> {
+        let old = (self.string_product != 0).then(|| self.string_pool.remove(&self.string_product)).flatten();
+        self.string_product = name.map(|name| self.new_string(name)).unwrap_or(0);
+        old
     }
 
     /// Returns the old value, if present.
-    pub fn set_manufacturer_name(&mut self, name: &str) -> Option<String> {
-        self.string_pool
-            .insert(self.string_manufacturer, name.to_string())
+    pub fn set_manufacturer_name(&mut self, name: Option<&str>) -> Option<String> {
+        let old = (self.string_manufacturer != 0).then(|| self.string_pool.remove(&self.string_manufacturer)).flatten();
+        self.string_manufacturer = name.map(|name| self.new_string(name)).unwrap_or(0);
+        old
     }
 
     pub fn with_interface(
@@ -119,11 +123,11 @@ impl UsbDevice {
         interface_class: u8,
         interface_subclass: u8,
         interface_protocol: u8,
-        name: &str,
+        name: Option<&str>,
         endpoints: Vec<UsbEndpoint>,
         handler: Arc<Mutex<Box<dyn UsbInterfaceHandler + Send>>>,
     ) -> Self {
-        let string_interface = self.new_string(name);
+        let string_interface = name.map(|name| self.new_string(name)).unwrap_or(0);
         let class_specific_descriptor = handler.lock().unwrap().get_class_specific_descriptor();
         self.interfaces.push(UsbInterface {
             interface_class,
