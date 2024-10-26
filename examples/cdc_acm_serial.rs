@@ -14,7 +14,7 @@ async fn main() {
             usbip::ClassCode::CDC as u8,
             usbip::cdc::CDC_ACM_SUBCLASS,
             0x00,
-            "Test CDC ACM",
+            Some("Test CDC ACM"),
             usbip::cdc::UsbCdcAcmHandler::endpoints(),
             handler.clone(),
         ),

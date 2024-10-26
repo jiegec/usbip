@@ -451,7 +451,7 @@ mod tests {
             ClassCode::CDC as u8,
             cdc::CDC_ACM_SUBCLASS,
             0x00,
-            "Test CDC ACM",
+            Some("Test CDC ACM"),
             cdc::UsbCdcAcmHandler::endpoints(),
             Arc::new(Mutex::new(
                 Box::new(cdc::UsbCdcAcmHandler::new()) as Box<dyn UsbInterfaceHandler + Send>

@@ -83,38 +83,82 @@ impl UsbDevice {
             num_configurations: 1,
             ..Self::default()
         };
-        res.string_configuration = 0;
-        res.string_manufacturer = 0;
-        res.string_product = 0;
-        res.string_serial = 0;
+        res.string_configuration = res.new_string("Default Configuration");
+        res.string_manufacturer = res.new_string("Manufacturer");
+        res.string_product = res.new_string("Product");
+        res.string_serial = res.new_string("Serial");
         res
     }
 
     /// Returns the old value, if present.
-    pub fn set_configuration_name(&mut self, name: Option<&str>) -> Option<String> {
-        let old = (self.string_configuration != 0).then(|| self.string_pool.remove(&self.string_configuration)).flatten();
-        self.string_configuration = name.map(|name| self.new_string(name)).unwrap_or(0);
+    pub fn set_configuration_name(&mut self, name: &str) -> Option<String> {
+        let old = (self.string_configuration != 0)
+            .then(|| self.string_pool.remove(&self.string_configuration))
+            .flatten();
+        self.string_configuration = self.new_string(name);
+        old
+    }
+
+    /// Unset configuration name and returns the old value, if present.
+    pub fn unset_configuration_name(&mut self) -> Option<String> {
+        let old = (self.string_configuration != 0)
+            .then(|| self.string_pool.remove(&self.string_configuration))
+            .flatten();
+        self.string_configuration = 0;
         old
     }
 
     /// Returns the old value, if present.
-    pub fn set_serial_number(&mut self, name: Option<&str>) -> Option<String> {
-        let old = (self.string_serial != 0).then(|| self.string_pool.remove(&self.string_serial)).flatten();
-        self.string_serial = name.map(|name| self.new_string(name)).unwrap_or(0);
+    pub fn set_serial_number(&mut self, name: &str) -> Option<String> {
+        let old = (self.string_serial != 0)
+            .then(|| self.string_pool.remove(&self.string_serial))
+            .flatten();
+        self.string_serial = self.new_string(name);
+        old
+    }
+
+    /// Unset serial number and returns the old value, if present.
+    pub fn unset_serial_number(&mut self) -> Option<String> {
+        let old = (self.string_serial != 0)
+            .then(|| self.string_pool.remove(&self.string_serial))
+            .flatten();
+        self.string_serial = 0;
         old
     }
 
     /// Returns the old value, if present.
-    pub fn set_product_name(&mut self, name: Option<&str>) -> Option<String> {
-        let old = (self.string_product != 0).then(|| self.string_pool.remove(&self.string_product)).flatten();
-        self.string_product = name.map(|name| self.new_string(name)).unwrap_or(0);
+    pub fn set_product_name(&mut self, name: &str) -> Option<String> {
+        let old = (self.string_product != 0)
+            .then(|| self.string_pool.remove(&self.string_product))
+            .flatten();
+        self.string_product = self.new_string(name);
+        old
+    }
+
+    /// Unset product name and returns the old value, if present.
+    pub fn unset_product_name(&mut self) -> Option<String> {
+        let old = (self.string_product != 0)
+            .then(|| self.string_pool.remove(&self.string_product))
+            .flatten();
+        self.string_product = 0;
         old
     }
 
     /// Returns the old value, if present.
-    pub fn set_manufacturer_name(&mut self, name: Option<&str>) -> Option<String> {
-        let old = (self.string_manufacturer != 0).then(|| self.string_pool.remove(&self.string_manufacturer)).flatten();
-        self.string_manufacturer = name.map(|name| self.new_string(name)).unwrap_or(0);
+    pub fn set_manufacturer_name(&mut self, name: &str) -> Option<String> {
+        let old = (self.string_manufacturer != 0)
+            .then(|| self.string_pool.remove(&self.string_manufacturer))
+            .flatten();
+        self.string_manufacturer = self.new_string(name);
+        old
+    }
+
+    /// Unset manufacturer name and returns the old value, if present.
+    pub fn unset_manufacturer_name(&mut self) -> Option<String> {
+        let old = (self.string_manufacturer != 0)
+            .then(|| self.string_pool.remove(&self.string_manufacturer))
+            .flatten();
+        self.string_manufacturer = 0;
         old
     }
 

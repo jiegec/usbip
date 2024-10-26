@@ -15,7 +15,7 @@ async fn main() {
             usbip::ClassCode::HID as u8,
             0x00,
             0x00,
-            "Test HID",
+            Some("Test HID"),
             vec![usbip::UsbEndpoint {
                 address: 0x81,         // IN
                 attributes: 0x03,      // Interrupt
