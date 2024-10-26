@@ -1,7 +1,7 @@
 use super::*;
 
 /// Represent a USB interface
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct UsbInterface {
     pub interface_class: u8,
@@ -16,7 +16,7 @@ pub struct UsbInterface {
 }
 
 /// A handler of a custom usb interface
-pub trait UsbInterfaceHandler {
+pub trait UsbInterfaceHandler: std::fmt::Debug {
     /// Return the class specific descriptor which is inserted between interface descriptor and endpoint descriptor
     fn get_class_specific_descriptor(&self) -> Vec<u8>;
 

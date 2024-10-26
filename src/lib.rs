@@ -39,7 +39,7 @@ pub use util::*;
 use crate::usbip_protocol::{UsbIpResponse, USBIP_RET_SUBMIT, USBIP_RET_UNLINK};
 
 /// Main struct of a USB/IP server
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct UsbIpServer {
     available_devices: RwLock<Vec<UsbDevice>>,
     used_devices: RwLock<HashMap<String, UsbDevice>>,

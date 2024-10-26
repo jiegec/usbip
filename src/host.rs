@@ -2,7 +2,7 @@
 use super::*;
 
 /// A handler to pass requests to a rusb USB device of the host
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RusbUsbHostInterfaceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }
@@ -93,7 +93,7 @@ impl UsbInterfaceHandler for RusbUsbHostInterfaceHandler {
 }
 
 /// A handler to pass requests to a USB device of the host
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RusbUsbHostDeviceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
 }
@@ -153,6 +153,14 @@ impl UsbDeviceHandler for RusbUsbHostDeviceHandler {
 #[derive(Clone)]
 pub struct NusbUsbHostInterfaceHandler {
     handle: Arc<Mutex<nusb::Interface>>,
+}
+
+impl std::fmt::Debug for NusbUsbHostInterfaceHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NusbUsbHostInterfaceHandler")
+            .field("handle", &"Opaque")
+            .finish()
+    }
 }
 
 impl NusbUsbHostInterfaceHandler {
@@ -229,6 +237,14 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
 #[derive(Clone)]
 pub struct NusbUsbHostDeviceHandler {
     handle: Arc<Mutex<nusb::Device>>,
+}
+
+impl std::fmt::Debug for NusbUsbHostDeviceHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NusbUsbHostDeviceHandler")
+            .field("handle", &"Opaque")
+            .finish()
+    }
 }
 
 impl NusbUsbHostDeviceHandler {

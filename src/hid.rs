@@ -5,7 +5,7 @@ use super::*;
 // HID 1.11: https://www.usb.org/sites/default/files/documents/hid1_11.pdf
 // HID Usage Tables 1.12: https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 enum UsbHidKeyboardHandlerState {
     Idle,
@@ -13,7 +13,7 @@ enum UsbHidKeyboardHandlerState {
 }
 
 /// A handler of a HID keyboard
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UsbHidKeyboardHandler {
     pub report_descriptor: Vec<u8>,
@@ -24,7 +24,7 @@ pub struct UsbHidKeyboardHandler {
 /// A report of a HID keyboard
 ///
 /// For definition of key codes, see [HID Usage Tables](https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UsbHidKeyboardReport {
     /// Key modifier

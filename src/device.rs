@@ -1,7 +1,7 @@
 use super::*;
 use rusb::Version as rusbVersion;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Version {
     pub major: u8,
@@ -37,7 +37,7 @@ impl From<u16> for Version {
 }
 
 /// Represent a USB device
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct UsbDevice {
     pub path: String,
@@ -529,7 +529,7 @@ impl UsbDevice {
 }
 
 /// A handler for URB targeting the device
-pub trait UsbDeviceHandler {
+pub trait UsbDeviceHandler: std::fmt::Debug {
     /// Handle a URB(USB Request Block) targeting at this device
     ///
     /// When the lower 4 bits of `bmRequestType` is zero and the URB is not handled by the library, this function is called.
