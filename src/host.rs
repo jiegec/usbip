@@ -1,7 +1,7 @@
 //! Host USB
 use super::*;
 
-/// A handler to pass requests to a rusb USB device of the host
+/// A handler to pass requests to interface of a rusb USB device of the host
 #[derive(Clone, Debug)]
 pub struct RusbUsbHostInterfaceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
@@ -92,7 +92,7 @@ impl UsbInterfaceHandler for RusbUsbHostInterfaceHandler {
     }
 }
 
-/// A handler to pass requests to a USB device of the host
+/// A handler to pass requests to device of a rusb USB device of the host
 #[derive(Clone, Debug)]
 pub struct RusbUsbHostDeviceHandler {
     handle: Arc<Mutex<DeviceHandle<GlobalContext>>>,
@@ -149,7 +149,7 @@ impl UsbDeviceHandler for RusbUsbHostDeviceHandler {
     }
 }
 
-/// A handler to pass requests to a rusb USB device of the host
+/// A handler to pass requests to interface of a nusb USB device of the host
 #[derive(Clone)]
 pub struct NusbUsbHostInterfaceHandler {
     handle: Arc<Mutex<nusb::Interface>>,
@@ -233,7 +233,7 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
     }
 }
 
-/// A handler to pass requests to a USB device of the host
+/// A handler to pass requests to device of a nusb USB device of the host
 #[derive(Clone)]
 pub struct NusbUsbHostDeviceHandler {
     handle: Arc<Mutex<nusb::Device>>,
