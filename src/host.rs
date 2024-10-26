@@ -283,14 +283,18 @@ impl UsbDeviceHandler for NusbUsbHostDeviceHandler {
             index: setup.index,
         };
         // control
-        if setup.request_type & 0x80 == 0 {
-            // control out
-            handle.control_out_blocking(control, req, timeout).ok();
-        } else {
-            // control in
-            if let Ok(len) = handle.control_in_blocking(control, &mut buffer, timeout) {
-                return Ok(Vec::from(&buffer[..len]));
+        if cfg!(not(target_os = "windows")) {
+            if setup.request_type & 0x80 == 0 {
+                // control out
+                handle.control_out_blocking(control, req, timeout).ok();
+            } else {
+                // control in
+                if let Ok(len) = handle.control_in_blocking(control, &mut buffer, timeout) {
+                    return Ok(Vec::from(&buffer[..len]));
+                }
             }
+        } else {
+            warn!("Not supported in windows")
         }
         Ok(vec![])
     }
