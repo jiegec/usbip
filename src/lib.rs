@@ -54,17 +54,11 @@ impl UsbIpServer {
         }
     }
 
-    fn with_devices(device_list: Vec<Device<GlobalContext>>) -> Vec<UsbDevice> {
+    /// Create a [UsbIpServer] with Vec<[rusb::DeviceHandle]>
+    pub fn with_device_handles(device_handles: Vec<DeviceHandle<GlobalContext>>) -> Vec<UsbDevice> {
         let mut devices = vec![];
-
-        for dev in device_list {
-            let open_device = match dev.open() {
-                Ok(dev) => dev,
-                Err(err) => {
-                    warn!("Impossible to share {:?}: {}, ignoring device", dev, err);
-                    continue;
-                }
-            };
+        for open_device in device_handles {
+            let dev = open_device.device();
             let desc = match dev.device_descriptor() {
                 Ok(desc) => desc,
                 Err(err) => {
@@ -201,6 +195,22 @@ impl UsbIpServer {
             devices.push(device);
         }
         devices
+    }
+
+    fn with_devices(device_list: Vec<Device<GlobalContext>>) -> Vec<UsbDevice> {
+        let mut device_handles = vec![];
+
+        for dev in device_list {
+            let open_device = match dev.open() {
+                Ok(dev) => dev,
+                Err(err) => {
+                    warn!("Impossible to share {:?}: {}, ignoring device", dev, err);
+                    continue;
+                }
+            };
+            device_handles.push(open_device);
+        }
+        Self::with_device_handles(device_handles)
     }
 
     /// Create a [UsbIpServer] exposing devices in the host, and redirect all USB transfers to them using libusb
