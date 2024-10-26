@@ -195,8 +195,8 @@ impl UsbDevice {
 
     pub(crate) fn new_string(&mut self, s: &str) -> u8 {
         for i in 1.. {
-            if self.string_pool.get(&i).is_none() {
-                self.string_pool.insert(i, s.to_string());
+            if let std::collections::hash_map::Entry::Vacant(e) = self.string_pool.entry(i) {
+                e.insert(s.to_string());
                 return i;
             }
         }
