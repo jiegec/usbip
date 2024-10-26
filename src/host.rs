@@ -286,9 +286,11 @@ impl UsbDeviceHandler for NusbUsbHostDeviceHandler {
         if cfg!(not(target_os = "windows")) {
             if setup.request_type & 0x80 == 0 {
                 // control out
+                #[cfg(not(target_os = "windows"))]
                 handle.control_out_blocking(control, req, timeout).ok();
             } else {
                 // control in
+                #[cfg(not(target_os = "windows"))]
                 if let Ok(len) = handle.control_in_blocking(control, &mut buffer, timeout) {
                     return Ok(Vec::from(&buffer[..len]));
                 }
