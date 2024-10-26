@@ -25,6 +25,17 @@ impl From<Version> for rusbVersion {
     }
 }
 
+/// bcdDevice
+impl From<u16> for Version {
+    fn from(value: u16) -> Self {
+        Self {
+            major: (value >> 8) as u8,
+            minor: ((value >> 4) & 0xF) as u8,
+            patch: (value & 0xF) as u8,
+        }
+    }
+}
+
 /// Represent a USB device
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
