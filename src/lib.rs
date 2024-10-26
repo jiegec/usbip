@@ -54,7 +54,7 @@ impl UsbIpServer {
         }
     }
 
-    /// Create a [UsbIpServer] with Vec<[rusb::DeviceHandle]>
+    /// Create a [UsbIpServer] with Vec<[rusb::DeviceHandle]> for sharing host devices
     pub fn with_device_handles(device_handles: Vec<DeviceHandle<GlobalContext>>) -> Vec<UsbDevice> {
         let mut devices = vec![];
         for open_device in device_handles {
@@ -106,7 +106,7 @@ impl UsbIpServer {
                     });
                 }
 
-                let handler = Arc::new(Mutex::new(Box::new(UsbHostInterfaceHandler::new(
+                let handler = Arc::new(Mutex::new(Box::new(RusbUsbHostInterfaceHandler::new(
                     handle.clone(),
                 ))
                     as Box<dyn UsbInterfaceHandler + Send>));
@@ -157,9 +157,9 @@ impl UsbIpServer {
                     interval: 0,
                 },
                 interfaces,
-                device_handler: Some(Arc::new(Mutex::new(Box::new(UsbHostDeviceHandler::new(
-                    handle.clone(),
-                ))))),
+                device_handler: Some(Arc::new(Mutex::new(Box::new(
+                    RusbUsbHostDeviceHandler::new(handle.clone()),
+                )))),
                 usb_version: desc.usb_version().into(),
                 ..UsbDevice::default()
             };
