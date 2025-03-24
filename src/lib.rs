@@ -36,7 +36,7 @@ pub use interface::*;
 pub use setup::*;
 pub use util::*;
 
-use crate::usbip_protocol::{UsbIpResponse, USBIP_RET_SUBMIT, USBIP_RET_UNLINK};
+use crate::usbip_protocol::{USBIP_RET_SUBMIT, USBIP_RET_UNLINK, UsbIpResponse};
 
 /// Main struct of a USB/IP server
 #[derive(Default, Debug)]
@@ -554,7 +554,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        usbip_protocol::{UsbIpHeaderBasic, USBIP_CMD_SUBMIT},
+        usbip_protocol::{USBIP_CMD_SUBMIT, UsbIpHeaderBasic},
         util::tests::*,
     };
 
