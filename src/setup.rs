@@ -23,9 +23,9 @@ impl SetupPacket {
         SetupPacket {
             request_type: setup[0],
             request: setup[1],
-            value: (setup[3] as u16) << 8 | (setup[2] as u16),
-            index: (setup[5] as u16) << 8 | (setup[4] as u16),
-            length: (setup[7] as u16) << 8 | (setup[6] as u16),
+            value: ((setup[3] as u16) << 8) | (setup[2] as u16),
+            index: ((setup[5] as u16) << 8) | (setup[4] as u16),
+            length: ((setup[7] as u16) << 8) | (setup[6] as u16),
         }
     }
 }

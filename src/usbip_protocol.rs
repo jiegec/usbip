@@ -626,13 +626,11 @@ mod tests {
         let res = UsbIpResponse::op_rep_devlist(&[device.clone()]);
         assert_eq!(
             res.to_bytes(),
-            vec![
-                vec![0x01, 0x11],             // version
+            [vec![0x01, 0x11],             // version
                 vec![0x00, 0x05],             // command
                 vec![0x00, 0x00, 0x00, 0x00], // status
                 vec![0x00, 0x00, 0x00, 0x01], // device_count
-                device.to_bytes()
-            ]
+                device.to_bytes()]
             .concat()
             .as_slice()
         );
@@ -645,12 +643,10 @@ mod tests {
         let res = UsbIpResponse::op_rep_import_success(&device);
         assert_eq!(
             res.to_bytes(),
-            vec![
-                vec![0x01, 0x11],             // version
+            [vec![0x01, 0x11],             // version
                 vec![0x00, 0x03],             // command
                 vec![0x00, 0x00, 0x00, 0x00], // status
-                device.to_bytes()
-            ]
+                device.to_bytes()]
             .concat()
             .as_slice()
         );

@@ -596,7 +596,7 @@ mod test {
                     request_type: 0b10000000,
                     request: StandardRequest::GetDescriptor as u8,
                     // string pool only contains 4 strings, 5 should be invalid
-                    value: (DescriptorType::String as u16) << 8 | 5,
+                    value: ((DescriptorType::String as u16) << 8) | 5,
                     index: 0,
                     length: 0,
                 },
