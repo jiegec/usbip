@@ -148,8 +148,7 @@ impl UsbIpCommand {
         let version: u16 = socket.read_u16().await?;
 
         if version != 0 && version != USBIP_VERSION {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!("Unknown version: {:#04X}", version),
             ));
         }
@@ -242,8 +241,7 @@ impl UsbIpCommand {
                     unlink_seqnum,
                 })
             }
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            _ => Err(std::io::Error::other(
                 format!("Unknown command: {:#04X}", command),
             )),
         }

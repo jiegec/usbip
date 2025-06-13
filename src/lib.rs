@@ -370,8 +370,7 @@ impl UsbIpServer {
             .values()
             .find(|d| d.bus_id == bus_id)
         {
-            Err(std::io::Error::new(
-                ErrorKind::Other,
+            Err(std::io::Error::other(
                 format!("Device {} is in use", device.bus_id),
             ))
         } else {
