@@ -175,10 +175,7 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>> {
-        debug!(
-            "To host device: ep={:?} setup={:?} req={:?}",
-            ep, setup, req
-        );
+        debug!("To host device: ep={ep:?} setup={setup:?} req={req:?}",);
         let mut buffer = vec![0u8; transfer_buffer_length as usize];
         let timeout = std::time::Duration::new(1, 0);
         let handle = self.handle.lock().unwrap();

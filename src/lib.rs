@@ -183,8 +183,7 @@ impl UsbIpServer {
                 Ok(desc) => desc,
                 Err(err) => {
                     warn!(
-                        "Impossible to get config descriptor for {:?}: {}, ignoring device",
-                        dev, err
+                        "Impossible to get config descriptor for {dev:?}: {err}, ignoring device",
                     );
                     continue;
                 }
