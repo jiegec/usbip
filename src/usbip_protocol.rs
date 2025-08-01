@@ -149,8 +149,7 @@ impl UsbIpCommand {
 
         if version != 0 && version != USBIP_VERSION {
             return Err(std::io::Error::other(format!(
-                "Unknown version: {:#04X}",
-                version
+                "Unknown version: {version:#04X}"
             )));
         }
 
@@ -243,8 +242,7 @@ impl UsbIpCommand {
                 })
             }
             _ => Err(std::io::Error::other(format!(
-                "Unknown command: {:#04X}",
-                command
+                "Unknown command: {command:#04X}"
             ))),
         }
     }

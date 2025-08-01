@@ -61,10 +61,7 @@ impl UsbIpServer {
             let dev = match device_info.open() {
                 Ok(dev) => dev,
                 Err(err) => {
-                    warn!(
-                        "Impossible to open device {:?}: {}, ignoring device",
-                        device_info, err
-                    );
+                    warn!("Impossible to open device {device_info:?}: {err}, ignoring device",);
                     continue;
                 }
             };
@@ -72,8 +69,7 @@ impl UsbIpServer {
                 Ok(cfg) => cfg,
                 Err(err) => {
                     warn!(
-                        "Impossible to get active configuration {:?}: {}, ignoring device",
-                        device_info, err
+                        "Impossible to get active configuration {device_info:?}: {err}, ignoring device",
                     );
                     continue;
                 }
@@ -178,8 +174,7 @@ impl UsbIpServer {
                 Ok(desc) => desc,
                 Err(err) => {
                     warn!(
-                        "Impossible to get device descriptor for {:?}: {}, ignoring device",
-                        dev, err
+                        "Impossible to get device descriptor for {dev:?}: {err}, ignoring device",
                     );
                     continue;
                 }
@@ -319,7 +314,7 @@ impl UsbIpServer {
             let open_device = match dev.open() {
                 Ok(dev) => dev,
                 Err(err) => {
-                    warn!("Impossible to share {:?}: {}, ignoring device", dev, err);
+                    warn!("Impossible to share {dev:?}: {err}, ignoring device");
                     continue;
                 }
             };
@@ -377,7 +372,7 @@ impl UsbIpServer {
         } else {
             Err(std::io::Error::new(
                 ErrorKind::NotFound,
-                format!("Device {} not found", bus_id),
+                format!("Device {bus_id} not found"),
             ))
         }
     }
@@ -471,13 +466,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
 
                 let res = match device.find_ep(real_ep as u8) {
                     None => {
-                        warn!("Endpoint {:02x?} not found", real_ep);
+                        warn!("Endpoint {real_ep:02x?} not found");
                         UsbIpResponse::usbip_ret_submit_fail(&header)
                     }
                     Some((ep, intf)) => {
-                        trace!("->Endpoint {:02x?}", ep);
-                        trace!("->Setup {:02x?}", setup);
-                        trace!("->Request {:02x?}", data);
+                        trace!("->Endpoint {ep:02x?}");
+                        trace!("->Setup {setup:02x?}");
+                        trace!("->Request {data:02x?}");
                         let resp = device
                             .handle_urb(
                                 ep,
@@ -493,12 +488,12 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                                 if out {
                                     trace!("<-Wrote {}", data.len());
                                 } else {
-                                    trace!("<-Resp {:02x?}", resp);
+                                    trace!("<-Resp {resp:02x?}");
                                 }
                                 UsbIpResponse::usbip_ret_submit_success(&header, 0, 0, resp, vec![])
                             }
                             Err(err) => {
-                                warn!("Error handling URB: {}", err);
+                                warn!("Error handling URB: {err}");
                                 UsbIpResponse::usbip_ret_submit_fail(&header)
                             }
                         }
@@ -511,7 +506,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 mut header,
                 unlink_seqnum,
             } => {
-                trace!("Got USBIP_CMD_UNLINK for {:10x?}", unlink_seqnum);
+                trace!("Got USBIP_CMD_UNLINK for {unlink_seqnum:10x?}");
 
                 header.command = USBIP_RET_UNLINK.into();
 
@@ -535,11 +530,11 @@ pub async fn server(addr: SocketAddr, server: Arc<UsbIpServer>) {
                     let new_server = server.clone();
                     tokio::spawn(async move {
                         let res = handler(&mut socket, new_server).await;
-                        info!("Handler ended with {:?}", res);
+                        info!("Handler ended with {res:?}");
                     });
                 }
                 Err(err) => {
-                    warn!("Got error {:?}", err);
+                    warn!("Got error {err:?}");
                 }
             }
         }

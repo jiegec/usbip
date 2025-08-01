@@ -291,7 +291,7 @@ impl UsbDevice {
         match (FromPrimitive::from_u8(ep.attributes), ep.direction()) {
             (Some(Control), In) => {
                 // control in
-                debug!("Control IN setup={:x?}", setup_packet);
+                debug!("Control IN setup={setup_packet:x?}");
                 match (
                     setup_packet.request_type,
                     FromPrimitive::from_u8(setup_packet.request),
@@ -436,7 +436,7 @@ impl UsbDevice {
                                 } else {
                                     Err(std::io::Error::new(
                                         std::io::ErrorKind::InvalidInput,
-                                        format!("Invalid string index: {}", index),
+                                        format!("Invalid string index: {index}"),
                                     ))
                                 }
                             }
@@ -463,7 +463,7 @@ impl UsbDevice {
                                 Ok(desc)
                             }
                             _ => {
-                                warn!("unknown desc type: {:x?}", setup_packet);
+                                warn!("unknown desc type: {setup_packet:x?}");
                                 Ok(vec![])
                             }
                         }
@@ -488,7 +488,7 @@ impl UsbDevice {
             }
             (Some(Control), Out) => {
                 // control out
-                debug!("Control OUT setup={:x?}", setup_packet);
+                debug!("Control OUT setup={setup_packet:x?}");
                 match (
                     setup_packet.request_type,
                     FromPrimitive::from_u8(setup_packet.request),
