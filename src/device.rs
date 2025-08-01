@@ -301,6 +301,7 @@ impl UsbDevice {
                         match FromPrimitive::from_u16(setup_packet.value >> 8) {
                             Some(Device) => {
                                 debug!("Get device descriptor");
+                                // Standard Device Descriptor
                                 let mut desc = vec![
                                     0x12,         // bLength
                                     Device as u8, // bDescriptorType: Device
@@ -319,7 +320,7 @@ impl UsbDevice {
                                     self.string_manufacturer, // iManufacturer
                                     self.string_product,      // iProduct
                                     self.string_serial,       // iSerial
-                                    self.num_configurations,
+                                    self.num_configurations,  // bNumConfigurations
                                 ];
 
                                 // requested len too short: wLength < real length
@@ -345,6 +346,7 @@ impl UsbDevice {
                             }
                             Some(Configuration) => {
                                 debug!("Get configuration descriptor");
+                                // Standard Configuration Descriptor
                                 let mut desc = vec![
                                     0x09,                // bLength
                                     Configuration as u8, // bDescriptorType: Configuration
@@ -353,8 +355,8 @@ impl UsbDevice {
                                     self.interfaces.len() as u8, // bNumInterfaces
                                     self.configuration_value, // bConfigurationValue
                                     self.string_configuration, // iConfiguration
-                                    0x80, // bmAttributes Bus Powered
-                                    0x32, // bMaxPower 100mA
+                                    0x80, // bmAttributes: Bus Powered
+                                    0x32, // bMaxPower: 100mA
                                 ];
                                 for (i, intf) in self.interfaces.iter().enumerate() {
                                     let mut intf_desc = vec![
@@ -401,12 +403,13 @@ impl UsbDevice {
                                 debug!("Get string descriptor");
                                 let index = setup_packet.value as u8;
                                 if index == 0 {
+                                    // String Descriptor Zero, Specifying Languages Supported by the Device
                                     // language ids
                                     let mut desc = vec![
                                         4,                            // bLength
                                         DescriptorType::String as u8, // bDescriptorType
                                         0x09,
-                                        0x04, // bLANGID, en-US
+                                        0x04, // wLANGID[0], en-US
                                     ];
                                     // requested len too short: wLength < real length
                                     if setup_packet.length < desc.len() as u16 {
@@ -414,6 +417,7 @@ impl UsbDevice {
                                     }
                                     Ok(desc)
                                 } else if let Some(s) = &self.string_pool.get(&index) {
+                                    // UNICODE String Descriptor
                                     let bytes: Vec<u16> = s.encode_utf16().collect();
                                     let mut desc = vec![
                                         2 + bytes.len() as u8 * 2,    // bLength
@@ -438,17 +442,18 @@ impl UsbDevice {
                             }
                             Some(DeviceQualifier) => {
                                 debug!("Get device qualifier descriptor");
+                                // Device_Qualifier Descriptor
                                 let mut desc = vec![
                                     0x0A,                  // bLength
                                     DeviceQualifier as u8, // bDescriptorType: Device Qualifier
                                     self.usb_version.minor,
-                                    self.usb_version.major,
-                                    self.device_class,    // bDeviceClass
-                                    self.device_subclass, // bDeviceSUbClass
-                                    self.device_protocol, // bDeviceProtocol
+                                    self.usb_version.major, // bcdUSB
+                                    self.device_class,      // bDeviceClass
+                                    self.device_subclass,   // bDeviceSUbClass
+                                    self.device_protocol,   // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
                                     self.num_configurations, // bNumConfigurations
-                                    0x00,                 // reserved
+                                    0x00,                   // bReserved
                                 ];
 
                                 // requested len too short: wLength < real length

@@ -82,16 +82,32 @@ pub enum StandardRequest {
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DescriptorType {
+    /// DEVICE
     Device = 1,
+    /// CONFIGURATION
     Configuration = 2,
+    /// STRING
     String = 3,
+    /// INTERFACE
     Interface = 4,
+    /// ENDPOINT
     Endpoint = 5,
+    /// DEVICE_QUALIFIER
     DeviceQualifier = 6,
+    /// OTHER_SPEED_CONFIGURATION
     OtherSpeedConfiguration = 7,
+    /// INTERFACE_POINTER
     InterfacePower = 8,
+    /// OTG
     OTG = 9,
+    /// DEBUG
     Debug = 0xA,
+    /// INTERFACE_ASSOCIATION
     InterfaceAssociation = 0xB,
+    /// BOS
     BOS = 0xF,
+    // DEVICE CAPABILITY
+    DeviceCapability = 0x10,
+    /// SUPERSPEED_USB_ENDPOINT_COMPANION
+    SuperspeedUsbEndpointCompanion = 0x30,
 }
