@@ -106,20 +106,24 @@ impl UsbIpServer {
                     handler,
                 });
             }
+
+            // Platform-specific bus number (Linux-only)
+            let bus_num_val: u32;
+            #[cfg(target_os = "linux")]
+            {
+                bus_num_val = device_info.busnum() as u32;
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                bus_num_val = 0;
+            }
+
+            let device_address = device_info.device_address();
+
             let mut device = UsbDevice {
-                path: format!(
-                    "/sys/bus/{}/{}/{}",
-                    device_info.busnum(),
-                    device_info.device_address(),
-                    0
-                ),
-                bus_id: format!(
-                    "{}-{}-{}",
-                    device_info.busnum(),
-                    device_info.device_address(),
-                    0,
-                ),
-                bus_num: device_info.busnum() as u32,
+                path: format!("/sys/bus/{}/{}/{}", bus_num_val, device_address, 0),
+                bus_id: format!("{}-{}-{}", bus_num_val, device_address, 0),
+                bus_num: bus_num_val,
                 dev_num: 0,
                 speed: device_info.speed().unwrap() as u32,
                 vendor_id: device_info.vendor_id(),
