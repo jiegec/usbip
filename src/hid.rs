@@ -35,16 +35,17 @@ pub struct UsbHidKeyboardReport {
 
 impl UsbHidKeyboardReport {
     pub fn from_ascii(ascii: u8) -> UsbHidKeyboardReport {
-        // TODO: casing
-        let key = match ascii {
-            b'a'..=b'z' => ascii - b'a' + 4,
-            b'1'..=b'9' => ascii - b'1' + 30,
-            b'0' => 39,
-            b'\r' | b'\n' => 40,
+        let (modifier, key) = match ascii {
+            b'a'..=b'z' => (0, ascii - b'a' + 4),
+            b'A'..=b'Z' => (0x02, ascii - b'A' + 4), // Left Shift modifier
+            b'1'..=b'9' => (0, ascii - b'1' + 30),
+            b'0' => (0, 39),
+            b'\r' | b'\n' => (0, 40),
+            b' ' => (0, 44), // Space
             _ => unimplemented!("Unrecognized ascii {}", ascii),
         };
         UsbHidKeyboardReport {
-            modifier: 0,
+            modifier,
             keys: [key, 0, 0, 0, 0, 0],
         }
     }
