@@ -75,9 +75,17 @@ impl UsbInterfaceHandler for UsbCdcAcmHandler {
                 return Ok(vec![]);
             } else {
                 // bulk in
-                // TODO: handle max packet size
-                let resp = self.tx_buffer.clone();
-                self.tx_buffer.clear();
+                // Handle max packet size - return data in chunks of max_packet_size
+                let max_packet_size = ep.max_packet_size as usize;
+                let resp = if self.tx_buffer.len() > max_packet_size {
+                    // Return only the first chunk (max_packet_size bytes)
+                    self.tx_buffer.drain(..max_packet_size).collect::<Vec<_>>()
+                } else {
+                    // Return all data if it fits in one packet
+                    let resp = self.tx_buffer.clone();
+                    self.tx_buffer.clear();
+                    resp
+                };
                 return Ok(resp);
             }
         }
