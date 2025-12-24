@@ -16,7 +16,7 @@ num-traits = "0.2.15"
 num-derive = "0.4.2"
 rusb = "0.9.3"
 serde = { version = "1.0", features = ["derive"], optional = true }
-nusb = "0.1.10"
+nusb = "0.2.1"
 
 [dev-dependencies]
 tokio = { version = "1.22.0", features = ["full"] }

@@ -3,6 +3,7 @@
 use log::*;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use nusb::MaybeFuture;
 use rusb::*;
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
@@ -58,7 +59,7 @@ impl UsbIpServer {
     pub fn with_nusb_devices(nusb_device_infos: Vec<nusb::DeviceInfo>) -> Vec<UsbDevice> {
         let mut devices = vec![];
         for device_info in nusb_device_infos {
-            let dev = match device_info.open() {
+            let dev = match device_info.open().wait() {
                 Ok(dev) => dev,
                 Err(err) => {
                     warn!("Impossible to open device {device_info:?}: {err}, ignoring device",);
@@ -78,7 +79,7 @@ impl UsbIpServer {
             for intf in cfg.interfaces() {
                 // ignore alternate settings
                 let intf_num = intf.interface_number();
-                let intf = dev.claim_interface(intf_num).unwrap();
+                let intf = dev.claim_interface(intf_num).wait().unwrap();
                 let alt_setting = intf.descriptors().next().unwrap();
                 let mut endpoints = vec![];
 
@@ -100,7 +101,7 @@ impl UsbIpServer {
                     interface_subclass: alt_setting.subclass(),
                     interface_protocol: alt_setting.protocol(),
                     endpoints,
-                    string_interface: alt_setting.string_index().unwrap_or(0),
+                    string_interface: alt_setting.string_index().map(|nz| nz.get()).unwrap_or(0),
                     class_specific_descriptor: Vec::new(),
                     handler,
                 });
@@ -108,17 +109,17 @@ impl UsbIpServer {
             let mut device = UsbDevice {
                 path: format!(
                     "/sys/bus/{}/{}/{}",
-                    device_info.bus_number(),
+                    device_info.busnum(),
                     device_info.device_address(),
                     0
                 ),
                 bus_id: format!(
                     "{}-{}-{}",
-                    device_info.bus_number(),
+                    device_info.busnum(),
                     device_info.device_address(),
                     0,
                 ),
-                bus_num: device_info.bus_number() as u32,
+                bus_num: device_info.busnum() as u32,
                 dev_num: 0,
                 speed: device_info.speed().unwrap() as u32,
                 vendor_id: device_info.vendor_id(),
