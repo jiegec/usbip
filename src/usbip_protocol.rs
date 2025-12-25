@@ -621,7 +621,7 @@ mod tests {
     fn byte_serialize_op_rep_devlist() {
         setup_test_logger();
         let device = example_device();
-        let res = UsbIpResponse::op_rep_devlist(&[device.clone()]);
+        let res = UsbIpResponse::op_rep_devlist(std::slice::from_ref(&device));
         assert_eq!(
             res.to_bytes(),
             [
