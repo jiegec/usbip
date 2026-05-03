@@ -495,6 +495,10 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                                     trace!("<-Resp {resp:02x?}");
                                 }
                                 let actual_length = if out {
+                                    debug_assert!(
+                                        resp.is_empty(),
+                                        "OUT transfer should return empty response buffer"
+                                    );
                                     data.len() as u32
                                 } else {
                                     resp.len() as u32

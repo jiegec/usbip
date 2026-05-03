@@ -444,7 +444,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a successful OP_REP_IMPORT response
+    /// Constructs a successful USBIP_RET_SUBMIT response
     pub fn usbip_ret_submit_success(
         header: &UsbIpHeaderBasic,
         start_frame: u32,
@@ -465,7 +465,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a failed OP_REP_IMPORT response
+    /// Constructs a failed USBIP_RET_SUBMIT response
     pub fn usbip_ret_submit_fail(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetSubmit {
             header: header.clone(),
@@ -479,7 +479,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a successful OP_REP_IMPORT response
+    /// Constructs a successful USBIP_RET_UNLINK response
     pub fn usbip_ret_unlink_success(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetUnlink {
             header: header.clone(),
@@ -487,7 +487,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a failed OP_REP_IMPORT response.
+    /// Constructs a failed USBIP_RET_UNLINK response
     pub fn usbip_ret_unlink_fail(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetUnlink {
             header: header.clone(),
