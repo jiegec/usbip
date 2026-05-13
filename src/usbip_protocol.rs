@@ -385,11 +385,11 @@ impl UsbIpResponse {
                     Vec::with_capacity(48 + transfer_buffer.len() + iso_packet_descriptor.len());
 
                 debug_assert!(header.command == USBIP_RET_SUBMIT.into());
-                debug_assert!(if header.direction == Direction::In as u32 {
-                    actual_length == transfer_buffer.len() as u32
+                if header.direction == Direction::In as u32 {
+                    debug_assert!(actual_length == transfer_buffer.len() as u32);
                 } else {
-                    actual_length == 0
-                });
+                    debug_assert!(transfer_buffer.is_empty());
+                }
 
                 result.extend_from_slice(&header.to_bytes());
                 result.extend_from_slice(&status.to_be_bytes());
@@ -444,18 +444,19 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a successful OP_REP_IMPORT response
+    /// Constructs a successful USBIP_RET_SUBMIT response
     pub fn usbip_ret_submit_success(
         header: &UsbIpHeaderBasic,
         start_frame: u32,
         number_of_packets: u32,
+        actual_length: u32,
         transfer_buffer: Vec<u8>,
         iso_packet_descriptor: Vec<u8>,
     ) -> Self {
         Self::UsbIpRetSubmit {
             header: header.clone(),
             status: 0,
-            actual_length: transfer_buffer.len() as u32,
+            actual_length,
             start_frame,
             number_of_packets,
             error_count: 0,
@@ -464,7 +465,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a failed OP_REP_IMPORT response
+    /// Constructs a failed USBIP_RET_SUBMIT response
     pub fn usbip_ret_submit_fail(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetSubmit {
             header: header.clone(),
@@ -478,7 +479,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a successful OP_REP_IMPORT response
+    /// Constructs a successful USBIP_RET_UNLINK response
     pub fn usbip_ret_unlink_success(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetUnlink {
             header: header.clone(),
@@ -486,7 +487,7 @@ impl UsbIpResponse {
         }
     }
 
-    /// Constructs a failed OP_REP_IMPORT response.
+    /// Constructs a failed USBIP_RET_UNLINK response
     pub fn usbip_ret_unlink_fail(header: &UsbIpHeaderBasic) -> Self {
         Self::UsbIpRetUnlink {
             header: header.clone(),
@@ -728,6 +729,34 @@ mod tests {
         };
 
         res.to_bytes();
+    }
+
+    #[test]
+    fn byte_serialize_usbip_ret_submit_out() {
+        setup_test_logger();
+        // OUT transfer: actual_length can be non-zero while transfer_buffer is empty
+        let res = UsbIpResponse::UsbIpRetSubmit {
+            header: UsbIpHeaderBasic {
+                command: USBIP_RET_SUBMIT.into(),
+                seqnum: 2,
+                devid: 3,
+                direction: Direction::Out as u32,
+                ep: 4,
+            },
+            status: 0,
+            actual_length: 384,
+            start_frame: 0,
+            number_of_packets: 0,
+            error_count: 0,
+            transfer_buffer: vec![],
+            iso_packet_descriptor: vec![],
+        };
+
+        let bytes = res.to_bytes();
+        // actual_length should be 384 (0x180) at offset 24
+        assert_eq!(&bytes[24..28], &[0x00, 0x00, 0x01, 0x80]);
+        // transfer_buffer should be empty (only header + fields, no payload)
+        assert_eq!(bytes.len(), 48);
     }
 
     #[test]

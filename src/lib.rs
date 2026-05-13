@@ -494,7 +494,23 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                                 } else {
                                     trace!("<-Resp {resp:02x?}");
                                 }
-                                UsbIpResponse::usbip_ret_submit_success(&header, 0, 0, resp, vec![])
+                                let actual_length = if out {
+                                    debug_assert!(
+                                        resp.is_empty(),
+                                        "OUT transfer should return empty response buffer"
+                                    );
+                                    data.len() as u32
+                                } else {
+                                    resp.len() as u32
+                                };
+                                UsbIpResponse::usbip_ret_submit_success(
+                                    &header,
+                                    0,
+                                    0,
+                                    actual_length,
+                                    resp,
+                                    vec![],
+                                )
                             }
                             Err(err) => {
                                 warn!("Error handling URB: {err}");
