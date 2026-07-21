@@ -279,32 +279,38 @@ impl UsbIpServer {
             };
 
             // set strings
+            //
+            // Devices are not required to respond successfully to a string descriptor
+            // read (some transiently NAK it, some don't implement the language ID we
+            // ask for). A failure here used to be treated as fatal via .unwrap(), which
+            // crashed enumeration - and with it every other device - instead of just
+            // leaving that one string unset.
             if let Some(index) = desc.manufacturer_string_index() {
-                device.string_manufacturer = device.new_string(
-                    &handle
-                        .lock()
-                        .unwrap()
-                        .read_string_descriptor_ascii(index)
-                        .unwrap(),
-                )
+                match handle.lock().unwrap().read_string_descriptor_ascii(index) {
+                    Ok(s) => device.string_manufacturer = device.new_string(&s),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read manufacturer string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
+                }
             }
             if let Some(index) = desc.product_string_index() {
-                device.string_product = device.new_string(
-                    &handle
-                        .lock()
-                        .unwrap()
-                        .read_string_descriptor_ascii(index)
-                        .unwrap(),
-                )
+                match handle.lock().unwrap().read_string_descriptor_ascii(index) {
+                    Ok(s) => device.string_product = device.new_string(&s),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read product string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
+                }
             }
             if let Some(index) = desc.serial_number_string_index() {
-                device.string_serial = device.new_string(
-                    &handle
-                        .lock()
-                        .unwrap()
-                        .read_string_descriptor_ascii(index)
-                        .unwrap(),
-                )
+                match handle.lock().unwrap().read_string_descriptor_ascii(index) {
+                    Ok(s) => device.string_serial = device.new_string(&s),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read serial number string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
+                }
             }
             devices.push(device);
         }
