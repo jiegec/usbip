@@ -477,15 +477,11 @@ impl UsbDevice {
                         handler.handle_urb(intf, ep, transfer_buffer_length, setup_packet, out_data)
                     }
                     _ if self.device_handler.is_some() => {
-                        // to device, endpoint, or other: device_handler implementations
-                        // (e.g. RusbUsbHostDeviceHandler, NusbUsbHostDeviceHandler in host.rs)
-                        // reconstruct the recipient from setup_packet.request_type themselves
-                        // and pass it through to the real transfer, so they're correct for any
-                        // recipient - restricting this arm to recipient 0 (Device) only meant
-                        // Endpoint/Other-recipient requests fell through to unimplemented!()
-                        // below. Some USB-serial chips (e.g. WCH's CH34x/CH9102 family) use
-                        // vendor-specific, non-Device-recipient control transfers to configure
-                        // line state, which hit exactly this case during real passthrough.
+                        // device_handler implementations (RusbUsbHostDeviceHandler,
+                        // NusbUsbHostDeviceHandler in host.rs) reconstruct the full
+                        // recipient from setup_packet.request_type themselves, so they
+                        // work for device/endpoint/other recipients. Interface-recipient
+                        // requests are caught by the arm above.
                         let lock = self.device_handler.as_ref().unwrap();
                         let mut handler = lock.lock().unwrap();
                         handler.handle_urb(transfer_buffer_length, setup_packet, out_data)
@@ -520,9 +516,8 @@ impl UsbDevice {
                         handler.handle_urb(intf, ep, transfer_buffer_length, setup_packet, out_data)
                     }
                     _ if self.device_handler.is_some() => {
-                        // to device, endpoint, or other - see the matching arm in the
-                        // control-in match above for why the recipient restriction was
-                        // dropped.
+                        // non-interface recipients forwarded to device_handler
+                        // (see the control-in arm above for details).
                         let lock = self.device_handler.as_ref().unwrap();
                         let mut handler = lock.lock().unwrap();
                         handler.handle_urb(transfer_buffer_length, setup_packet, out_data)

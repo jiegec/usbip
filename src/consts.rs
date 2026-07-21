@@ -52,6 +52,11 @@ pub enum EndpointAttributes {
     Interrupt,
 }
 
+/// USB endpoint direction: IN or OUT
+/// Re-exported from rusb for public API compatibility
+#[allow(unused_imports)]
+pub use rusb::Direction;
+
 /// Emulated max packet size of EP0
 pub const EP0_MAX_PACKET_SIZE: u16 = 64;
 
