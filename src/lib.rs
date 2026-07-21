@@ -288,19 +288,28 @@ impl UsbIpServer {
             if let Some(index) = desc.manufacturer_string_index() {
                 match handle.lock().unwrap().read_string_descriptor_ascii(index) {
                     Ok(s) => device.string_manufacturer = device.new_string(&s),
-                    Err(err) => warn!("[{:04x}:{:04x} {}] failed to read manufacturer string descriptor (index={index}): {err}", device.vendor_id, device.product_id, device.bus_id),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read manufacturer string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
                 }
             }
             if let Some(index) = desc.product_string_index() {
                 match handle.lock().unwrap().read_string_descriptor_ascii(index) {
                     Ok(s) => device.string_product = device.new_string(&s),
-                    Err(err) => warn!("[{:04x}:{:04x} {}] failed to read product string descriptor (index={index}): {err}", device.vendor_id, device.product_id, device.bus_id),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read product string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
                 }
             }
             if let Some(index) = desc.serial_number_string_index() {
                 match handle.lock().unwrap().read_string_descriptor_ascii(index) {
                     Ok(s) => device.string_serial = device.new_string(&s),
-                    Err(err) => warn!("[{:04x}:{:04x} {}] failed to read serial number string descriptor (index={index}): {err}", device.vendor_id, device.product_id, device.bus_id),
+                    Err(err) => warn!(
+                        "[{:04x}:{:04x} {}] failed to read serial number string descriptor (index={index}): {err}",
+                        device.vendor_id, device.product_id, device.bus_id
+                    ),
                 }
             }
             devices.push(device);
