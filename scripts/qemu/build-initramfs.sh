@@ -16,7 +16,6 @@
 #   DEMO_BIN    path to the compiled demo example (default: target/release/examples/demo)
 set -euo pipefail
 trap 'echo "ERROR: build-initramfs.sh failed at line $LINENO: $BASH_COMMAND" >&2' ERR
-set -x
 
 OUT="${1:?usage: build-initramfs.sh <output.cpio.gz>}"
 KERNEL="${KERNEL:-$(uname -r)}"
@@ -47,7 +46,13 @@ ln -sf busybox "$ROOT/sbin/modprobe"
 ln -sf busybox "$ROOT/sbin/insmod"
 ln -sf busybox "$ROOT/sbin/mdev"
 
-cp "$USBIP" "$ROOT/usr/sbin/usbip"
+# usbip: copy the client binary (following symlinks) and its real location if any.
+cp -L "$USBIP" "$ROOT/usr/sbin/usbip"
+if [ "$(readlink -f "$USBIP")" != "$USBIP" ]; then
+    _usbip_real="$(readlink -f "$USBIP")"
+    mkdir -p "$ROOT$(dirname "$_usbip_real")"
+    cp -L "$_usbip_real" "$ROOT$_usbip_real"
+fi
 cp "$DEMO_BIN" "$ROOT/demo_server"
 
 # --- kernel modules (preserve layout so the guest can `find` them) ---
@@ -65,17 +70,36 @@ done
 UI="$(find /usr/share -name usb.ids -print -quit 2>/dev/null)"
 [ -n "$UI" ] && cp "$UI" "$ROOT/usr/share/misc/usb.ids" || echo "WARN: usb.ids not found"
 
-# --- libraries needed by usbip + demo server (copy preserving absolute path) ---
+# --- libraries needed by usbip + demo server ---
+# Copy the dynamic loader and a comprehensive set of libc/system libraries
+# explicitly so the guest always has a working glibc, even if `ldd` cannot
+# resolve a given binary (e.g. a statically-linked or symlinked usbip tool).
+mkdir -p "$ROOT/lib64" "$ROOT/lib/x86_64-linux-gnu"
+for f in /lib64/ld-linux-x86-64.so.2; do
+    [ -e "$f" ] && cp -L "$f" "$ROOT$f"
+done
+for lib in libc.so.6 libm.so.6 libgcc_s.so.1 libpthread.so.0 libdl.so.2 librt.so.1 \
+           libudev.so.1 libcap.so.2 libcap-ng.so.0 libwrap.so.0 libusb-1.0.so.0; do
+    src=""
+    for d in /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /lib64 /lib; do
+        [ -e "$d/$lib" ] && { src="$d/$lib"; break; }
+    done
+    if [ -n "$src" ]; then
+        mkdir -p "$ROOT$(dirname "$src")"
+        cp -L "$src" "$ROOT$src"
+    fi
+done
+
+# Additionally copy any libraries ldd can resolve. Process substitution avoids a
+# `set -e`/pipefail abort if `ldd` itself returns non-zero.
 copy_libs() {
     local bin="$1"
-    ldd "$bin" 2>/dev/null \
-        | grep -oE '/[^ ]+\.so[^ ]*' \
-        | sort -u \
-        | while read -r lib; do
-            [ -e "$lib" ] || continue
-            mkdir -p "$ROOT$(dirname "$lib")"
-            cp -L "$lib" "$ROOT$lib"
-        done
+    local lib
+    while IFS= read -r lib; do
+        [ -e "$lib" ] || continue
+        mkdir -p "$ROOT$(dirname "$lib")"
+        cp -L "$lib" "$ROOT$lib"
+    done < <(ldd "$bin" 2>/dev/null | grep -oE '/[^ ]+\.so[^ ]*' | sort -u)
 }
 copy_libs "$USBIP"
 copy_libs "$DEMO_BIN"
