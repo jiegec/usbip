@@ -46,24 +46,28 @@ ln -sf busybox "$ROOT/sbin/modprobe"
 ln -sf busybox "$ROOT/sbin/insmod"
 ln -sf busybox "$ROOT/sbin/mdev"
 
-# usbip: copy the client binary (following symlinks) and its real location if any.
-cp -L "$USBIP" "$ROOT/usr/sbin/usbip"
-if [ "$(readlink -f "$USBIP")" != "$USBIP" ]; then
-    _usbip_real="$(readlink -f "$USBIP")"
-    mkdir -p "$ROOT$(dirname "$_usbip_real")"
-    cp -L "$_usbip_real" "$ROOT$_usbip_real"
-fi
+# usbip: copy the client tool to several standard locations and to its real
+# path. It may be a real binary or a symlink/script.
+_usbip_real="$(readlink -f "$USBIP")"
+for _dst in "$ROOT/usr/sbin/usbip" "$ROOT/usr/bin/usbip" "$ROOT$_usbip_real"; do
+    mkdir -p "$(dirname "$_dst")"
+    cp -L "$_usbip_real" "$_dst"
+done
 cp "$DEMO_BIN" "$ROOT/demo_server"
 
-# --- kernel modules (preserve layout so the guest can `find` them) ---
+# --- kernel modules (decompress if needed, preserve layout) ---
 for mod in usbip-core vhci-hcd cdc-acm; do
     ko=$(find "/lib/modules/$KERNEL" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
         echo "ERROR: kernel module $mod.ko not found for kernel $KERNEL"
         exit 1
     fi
-    mkdir -p "$ROOT$(dirname "$ko")"
-    cp "$ko" "$ROOT$ko"
+    case "$ko" in
+        *.ko.zst) out="${ko%.zst}"; mkdir -p "$ROOT$(dirname "$out")"; zstd -d -c "$ko" > "$ROOT$out" ;;
+        *.ko.xz)  out="${ko%.xz}";  mkdir -p "$ROOT$(dirname "$out")"; xz -d -c "$ko"  > "$ROOT$out" ;;
+        *.ko.gz)  out="${ko%.gz}";  mkdir -p "$ROOT$(dirname "$out")"; gzip -d -c "$ko" > "$ROOT$out" ;;
+        *)        mkdir -p "$ROOT$(dirname "$ko")"; cp -L "$ko" "$ROOT$ko" ;;
+    esac
 done
 
 # --- usb.ids database required by the usbip tool ---

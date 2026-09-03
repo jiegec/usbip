@@ -38,6 +38,12 @@ for mod in usbip-core vhci-hcd cdc-acm; do
 done
 sleep 1
 
+echo "=== usbip tool present? ==="
+ls -la /usr/sbin/usbip /usr/bin/usbip /demo_server 2>&1
+
+usbip_version=$(/usr/sbin/usbip 2>&1 | head -1 || true)
+echo "usbip version check: $usbip_version"
+
 echo "=== starting usbip demo server ==="
 RUST_LOG=info /demo_server > /tmp/server.log 2>&1 &
 SERVER_PID=$!
