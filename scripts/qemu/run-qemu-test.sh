@@ -33,8 +33,8 @@ fi
 DEMO_BIN="$REPO_ROOT/target/release/examples/demo"
 [ -e "$DEMO_BIN" ] || { echo "ERROR: $DEMO_BIN not found; run with --build"; exit 1; }
 
-KERNEL=$(uname -r)
-VMLINUZ=/boot/vmlinuz-$KERNEL
+KERNEL="${KERNEL:-$(uname -r)}"
+VMLINUZ="${VMLINUZ:-/boot/vmlinuz-$KERNEL}"
 [ -e "$VMLINUZ" ] || { echo "ERROR: no vmlinuz for kernel $KERNEL at $VMLINUZ"; exit 1; }
 
 WORK=$(mktemp -d)
@@ -45,7 +45,7 @@ SERIAL_LOG="${REPO_ROOT}/.qemu-serial.log"
 rm -f "$SERIAL_LOG"
 
 echo "=== building initramfs ==="
-DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/initramfs.cpio.gz" || exit 1
+DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" MODTREE="${MODTREE:-/lib/modules/$KERNEL}" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/initramfs.cpio.gz" || exit 1
 
 # /boot/vmlinuz-* is usually root-only; copy to a readable temp path for QEMU.
 VMLINUZ_SAFE="$WORK/vmlinuz"

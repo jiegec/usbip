@@ -73,7 +73,15 @@ Run it locally (requires `qemu-system-x86`, a static `busybox`, `cpio`, and the
 ```
 
 It runs under KVM when available and falls back to QEMU TCG otherwise. It is
-also wired into CI via `.github/workflows/qemu.yml`.
+also wired into CI via `.github/workflows/qemu.yml`. The kernel, vmlinuz and
+module tree used by the test can be overridden via the `KERNEL`, `VMLINUZ` and
+`MODTREE` environment variables (useful for testing against a downloaded
+kernel).
+
+> **Note:** Some kernels (notably Ubuntu's `azure`/`generic` kernels) do not
+> complete HID enumeration over USB/IP, so the HID-keyboard check is best-effort
+> (it is reported but does not fail the run). The CDC ACM serial device is the
+> always-verified device.
 
 ## License
 

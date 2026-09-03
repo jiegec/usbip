@@ -37,6 +37,7 @@ KERNEL="${KERNEL:-$(uname -r)}"
 BUSYBOX="${BUSYBOX:-$(command -v busybox)}"
 USBIP="${USBIP:-$(find_usbip_bin)}"
 DEMO_BIN="${DEMO_BIN:-target/release/examples/demo}"
+MODTREE="${MODTREE:-/lib/modules/$KERNEL}"
 
 [ -e "$BUSYBOX" ] || { echo "ERROR: busybox not found at $BUSYBOX"; exit 1; }
 [ -e "$USBIP" ] || { echo "ERROR: usbip not found at $USBIP"; exit 1; }
@@ -70,18 +71,21 @@ for _dst in "$ROOT/usr/sbin/usbip" "$ROOT/usr/bin/usbip" "$ROOT$_usbip_real"; do
 done
 cp "$DEMO_BIN" "$ROOT/demo_server"
 
-# --- kernel modules (decompress if needed, preserve layout) ---
+# --- kernel modules (decompress if needed, place under /lib/modules/$KERNEL) ---
 for mod in usbip-core vhci-hcd cdc-acm; do
-    ko=$(find "/lib/modules/$KERNEL" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
+    ko=$(find "$MODTREE" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
-        echo "ERROR: kernel module $mod.ko not found for kernel $KERNEL"
+        echo "ERROR: kernel module $mod.ko not found in $MODTREE (kernel $KERNEL)"
         exit 1
     fi
+    rel="${ko#"$MODTREE"/}"
+    dest="$ROOT/lib/modules/$KERNEL/$rel"
+    mkdir -p "$(dirname "$dest")"
     case "$ko" in
-        *.ko.zst) out="${ko%.zst}"; mkdir -p "$ROOT$(dirname "$out")"; zstd -d -c "$ko" > "$ROOT$out" ;;
-        *.ko.xz)  out="${ko%.xz}";  mkdir -p "$ROOT$(dirname "$out")"; xz -d -c "$ko"  > "$ROOT$out" ;;
-        *.ko.gz)  out="${ko%.gz}";  mkdir -p "$ROOT$(dirname "$out")"; gzip -d -c "$ko" > "$ROOT$out" ;;
-        *)        mkdir -p "$ROOT$(dirname "$ko")"; cp -L "$ko" "$ROOT$ko" ;;
+        *.ko.zst) zstd -d -c "$ko" > "$dest" ;;
+        *.ko.xz)  xz -d -c "$ko"  > "$dest" ;;
+        *.ko.gz)  gzip -d -c "$ko" > "$dest" ;;
+        *)        cp -L "$ko" "$dest" ;;
     esac
 done
 
