@@ -49,7 +49,13 @@ DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/in
 
 # /boot/vmlinuz-* is usually root-only; copy to a readable temp path for QEMU.
 VMLINUZ_SAFE="$WORK/vmlinuz"
-cp "$VMLINUZ" "$VMLINUZ_SAFE"
+if cp "$VMLINUZ" "$VMLINUZ_SAFE" 2>/dev/null; then
+    :
+else
+    echo "=== copying kernel via sudo ==="
+    sudo cp "$VMLINUZ" "$VMLINUZ_SAFE"
+    sudo chmod 644 "$VMLINUZ_SAFE"
+fi
 
 QEMU_SUDO=()
 QEMU_ACCEL=()
