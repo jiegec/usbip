@@ -32,12 +32,12 @@ jobs:
             sudo apt-get install -y linux-tools-common linux-tools-generic
           fi
 
-          # Install the Ubuntu generic kernel. linux-image-generic pulls the image +
-          # base modules (which include usbhid / hid / hid-generic), and
-          # linux-modules-extra-generic pulls usbip-core/vhci-hcd/cdc-acm. This is
-          # what we boot in QEMU (the runner's Azure kernel lacks USB HID support).
-          sudo apt-get install -y --no-install-recommends \
-            linux-image-generic linux-modules-extra-generic
+          # Install the Ubuntu generic kernel image. linux-image-generic pulls the
+          # image + base modules (which include usbhid / hid / hid-generic). The
+          # usbip/vhci/cdc-acm modules live in linux-modules-extra-<ver>-generic,
+          # installed once the version is known (next step). The runner's Azure
+          # kernel lacks USB HID support, so we boot the generic kernel in QEMU.
+          sudo apt-get install -y --no-install-recommends linux-image-generic
 
           echo "--- installed binaries ---"
           ls -l /usr/bin/busybox /usr/bin/qemu-system-x86_64 2>/dev/null || true
@@ -50,6 +50,8 @@ jobs:
           GENVER=$(ls /boot/vmlinuz-*-generic 2>/dev/null | sed 's#/boot/vmlinuz-##' | sort -V | tail -1)
           [ -n "$GENVER" ] || { echo "ERROR: no generic kernel found"; exit 1; }
           echo "generic kernel: $GENVER"
+          # usbip / vhci / cdc-acm modules
+          sudo apt-get install -y --no-install-recommends "linux-modules-extra-$GENVER"
           ls -l /boot/vmlinuz-$GENVER
           find /lib/modules/$GENVER -name 'usbhid.ko*' -o -name 'hid-generic.ko*' -o -name 'usbip-core.ko*' -o -name 'vhci-hcd.ko*' -o -name 'cdc-acm.ko*' 2>/dev/null || true
           # Export for the test step.
