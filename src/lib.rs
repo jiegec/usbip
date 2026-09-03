@@ -477,7 +477,7 @@ fn conn_closed() -> std::io::Error {
     std::io::Error::other("connection closed")
 }
 
-pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
+pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
     socket: T,
     server: Arc<UsbIpServer>,
 ) -> Result<()> {
@@ -641,7 +641,14 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                     // misbehaving client cannot drive unbounded task growth
                     // (potential DoS). When the cap is reached, fall through and
                     // complete the URB immediately instead of deferring.
-                    if pending.lock().unwrap().len() < MAX_PENDING_DEFERRED {
+                    let can_defer = {
+                        let p = pending.lock().unwrap();
+                        // A reused seqnum does not increase concurrency (it
+                        // replaces an existing pending entry), so allow it even
+                        // at the cap; only *new* seqnums are bounded.
+                        p.contains_key(&header.seqnum) || p.len() < MAX_PENDING_DEFERRED
+                    };
+                    if can_defer {
                         // Defer: spawn a task that waits for the handler to
                         // signal data. The response is queued to the writer
                         // (via the response channel) only once there is actually
