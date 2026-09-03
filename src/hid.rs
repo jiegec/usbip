@@ -136,14 +136,27 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
                         Some(HidDescriptorType::Report) => {
                             return Ok(self.report_descriptor.clone());
                         }
-                        _ => unimplemented!("hid descriptor {:?}", setup),
+                        Some(HidDescriptorType::Hid) => {
+                            return Ok(self.get_class_specific_descriptor());
+                        }
+                        _ => {
+                            warn!("Unknown HID descriptor type: {setup:?}");
+                            return Ok(vec![]);
+                        }
                     }
                 }
                 (0b00100001, 0x0A) => {
                     // SET_IDLE
                     return Ok(vec![]);
                 }
-                _ => unimplemented!("hid request {:?}", setup),
+                (0b00100001, 0x0B) => {
+                    // SET_PROTOCOL
+                    return Ok(vec![]);
+                }
+                _ => {
+                    warn!("Unhandled HID request: {setup:?}");
+                    return Ok(vec![]);
+                }
             }
         } else {
             // interrupt transfer
@@ -214,5 +227,49 @@ mod tests {
         setup_test_logger();
         let handler = UsbHidKeyboardHandler::new_keyboard();
         verify_descriptor(&handler.get_class_specific_descriptor());
+    }
+
+    #[test]
+    fn control_requests_do_not_panic() {
+        setup_test_logger();
+        let mut handler = UsbHidKeyboardHandler::new_keyboard();
+        let ep = UsbEndpoint {
+            address: 0x80,
+            attributes: EndpointAttributes::Control as u8,
+            max_packet_size: 64,
+            interval: 0,
+        };
+        let intf = UsbInterface {
+            interface_class: ClassCode::HID as u8,
+            interface_subclass: 0,
+            interface_protocol: 0,
+            endpoints: vec![],
+            string_interface: 0,
+            class_specific_descriptor: handler.get_class_specific_descriptor(),
+            handler: std::sync::Arc::new(std::sync::Mutex::new(Box::new(
+                UsbHidKeyboardHandler::new_keyboard(),
+            )
+                as Box<dyn UsbInterfaceHandler + Send>)),
+        };
+        let setup = SetupPacket {
+            request_type: 0b00100001,
+            request: 0x0B, // SET_PROTOCOL
+            value: 0x2200,
+            index: 0,
+            length: 0,
+        };
+        // Must not panic; should return Ok.
+        let _ = handler.handle_urb(&intf, ep, 0, setup, &[]);
+
+        let setup_hid_desc = SetupPacket {
+            request_type: 0b10000001,
+            request: 0x06, // GET_DESCRIPTOR
+            value: 0x2100, // HID descriptor
+            index: 0,
+            length: 0x40,
+        };
+        let res = handler.handle_urb(&intf, ep, 0, setup_hid_desc, &[]);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), handler.get_class_specific_descriptor());
     }
 }
