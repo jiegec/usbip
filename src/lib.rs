@@ -394,14 +394,21 @@ impl UsbIpServer {
 /// task growth (potential DoS).
 const MAX_PENDING_DEFERRED: usize = 64;
 
+/// A deferred (pending) interrupt IN URB: its per-URB token and the task that
+/// completes it.
+type DeferredUrb = (u64, tokio::task::JoinHandle<()>);
+
 /// A response queued to the background writer. Deferred completions may be
-/// dropped if the URB was cancelled by `USBIP_CMD_UNLINK`.
+/// dropped if the URB was cancelled by `USBIP_CMD_UNLINK` or superseded by a
+/// reused `seqnum`.
 enum Outbound {
     /// A response that must always be written (e.g. devlist, import, unlink,
     /// and immediate submissions).
     Immediate(UsbIpResponse),
-    /// A deferred interrupt IN completion; written only if still pending.
-    Deferred(UsbIpResponse),
+    /// A deferred interrupt IN completion. Carries a per-URB token so that a
+    /// stale completion (from a superseded URB) can be dropped without removing
+    /// the newer pending entry for the same `seqnum`.
+    Deferred(UsbIpResponse, u64),
 }
 
 async fn handle_submit(
@@ -477,9 +484,10 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
     let (mut reader, mut writer) = tokio::io::split(socket);
     let (delayed_tx, mut delayed_rx) = tokio::sync::mpsc::channel::<Outbound>(64);
     // Deferred (pending) interrupt IN transfers keyed by seqnum, shared with the
-    // writer task so a completion can be dropped if its URB was unlinked.
-    let pending: Arc<Mutex<HashMap<u32, tokio::task::JoinHandle<()>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    // writer task so a completion can be dropped if its URB was unlinked. The
+    // u64 token disambiguates a reused seqnum.
+    let pending: Arc<Mutex<HashMap<u32, DeferredUrb>>> = Arc::new(Mutex::new(HashMap::new()));
+    let mut next_token: u64 = 0;
     let mut current_import_device_id: Option<String> = None;
 
     // A background writer task. Every response (immediate and deferred) is sent
@@ -488,20 +496,37 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
     let writer_pending = pending.clone();
     let writer_task = tokio::spawn(async move {
         while let Some(msg) = delayed_rx.recv().await {
-            // A deferred completion must be dropped if its URB was already
-            // cancelled by USBIP_CMD_UNLINK.
+            // A deferred completion should be written only if its token still
+            // matches the pending entry (i.e. it was not cancelled by UNLINK or
+            // superseded by a reused seqnum). If it is stale, drop it without
+            // touching the newer pending entry.
             let should_write = match &msg {
-                Outbound::Deferred(UsbIpResponse::UsbIpRetSubmit { header, .. }) => writer_pending
-                    .lock()
-                    .unwrap()
-                    .remove(&header.seqnum)
-                    .is_some(),
-                Outbound::Deferred(_) | Outbound::Immediate(_) => true,
+                Outbound::Deferred(res, msg_token) => {
+                    let seqnum = match res {
+                        UsbIpResponse::UsbIpRetSubmit { header, .. } => Some(header.seqnum),
+                        _ => None,
+                    };
+                    if let Some(seqnum) = seqnum {
+                        let mut p = writer_pending.lock().unwrap();
+                        let matches = p
+                            .get(&seqnum)
+                            .map(|(token, _)| token == msg_token)
+                            .unwrap_or(false);
+                        if matches {
+                            p.remove(&seqnum);
+                        }
+                        drop(p);
+                        matches
+                    } else {
+                        true
+                    }
+                }
+                Outbound::Immediate(_) => true,
             };
             if should_write {
                 let res = match msg {
                     Outbound::Immediate(res) => res,
-                    Outbound::Deferred(res) => res,
+                    Outbound::Deferred(res, _) => res,
                 };
                 if res.write_to_socket(&mut writer).await.is_err() {
                     break;
@@ -624,6 +649,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                         let device = device.clone();
                         let header2 = header.clone();
                         let tx = delayed_tx.clone();
+                        // A per-URB token disambiguates a reused seqnum: if the
+                        // previous deferred task for this seqnum managed to
+                        // enqueue a completion before it was aborted, the writer
+                        // will drop it as stale instead of removing the
+                        // replacement entry.
+                        let token = next_token;
+                        next_token += 1;
                         let task = tokio::spawn(async move {
                             loop {
                                 let res = handle_submit(
@@ -650,7 +682,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                                     _ => true,
                                 };
                                 if should_send {
-                                    let _ = tx.send(Outbound::Deferred(res)).await;
+                                    let _ = tx.send(Outbound::Deferred(res, token)).await;
                                     break;
                                 }
                                 notify.notified().await;
@@ -660,10 +692,11 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                         // so it cannot later emit a response that no longer
                         // matches the pending map.
                         let mut p = pending.lock().unwrap();
-                        if let Some(old) = p.remove(&header.seqnum) {
+                        if let Some((_, old)) = p.remove(&header.seqnum) {
                             old.abort();
                         }
-                        p.insert(header.seqnum, task);
+                        p.insert(header.seqnum, (token, task));
+                        drop(p);
                         trace!("Deferred USBIP_CMD_SUBMIT (seqnum {})", header.seqnum);
                         continue;
                     }
@@ -693,7 +726,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                 header.command = USBIP_RET_UNLINK.into();
 
                 // Cancel a still-pending deferred transfer, if any.
-                if let Some(task) = pending.lock().unwrap().remove(&unlink_seqnum) {
+                if let Some((_, task)) = pending.lock().unwrap().remove(&unlink_seqnum) {
                     task.abort();
                 }
 
@@ -708,7 +741,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
 
     // Cleanup: abort pending deferred transfers, close the channel so the writer
     // task drains and exits, then wait for it.
-    for (_, task) in pending.lock().unwrap().drain() {
+    for (_, (_, task)) in pending.lock().unwrap().drain() {
         task.abort();
     }
     drop(delayed_tx);
