@@ -134,8 +134,10 @@ grep -iE 'panicked|not implemented|unimplemented|HID key|Got bulk out|Simulate|t
 echo "=== server.log (tail 15) ==="
 tail -15 /tmp/server.log 2>/dev/null
 
-echo "=== dmesg: usb 1-1 / 1-2 / hid / errors ==="
-dmesg | grep -iE 'usb 1-|vhci_hcd|hid|input:|error|timeout|reset|not responding|descriptor' | tail -60
+echo "=== dmesg: usb 1-1 / 1-2 / hid / errors (head) ==="
+dmesg | grep -iE 'usb [0-9]-|vhci_hcd|hid|input:|error|timeout|reset|not responding|descriptor' | head -40
+echo "=== dmesg (tail 10) ==="
+dmesg | tail -10
 
 if [ "$PASS" = "1" ]; then
     echo "TEST_RESULT: PASS"
