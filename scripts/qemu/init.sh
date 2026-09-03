@@ -31,8 +31,12 @@ K=$(uname -r)
 echo "=== kernel: $K ==="
 
 echo "=== loading modules ==="
-for mod in usbip-core vhci-hcd cdc-acm; do
-    ko=$(find /lib/modules \( -name "$mod.ko" -o -name "$mod.ko.*" \) 2>/dev/null | head -1)
+for mod in usb-common usbcore hid hid-generic usbhid usbip-core vhci-hcd cdc-acm; do
+    ko=$(find /lib/modules \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
+    if [ -z "$ko" ]; then
+        echo "- $mod: not present (built-in?)"
+        continue
+    fi
     echo "- loading $ko"
     insmod "$ko" || echo "WARN: failed to load $ko"
 done
@@ -119,8 +123,6 @@ else
 fi
 
 # ---- Keyboard test: read the vhci HID event device, look for KEY_1 (code=2) ----
-# NOTE: HID over USB/IP is not supported on some kernels (e.g. Ubuntu's azure/
-# generic kernels), so this is best-effort and does not gate the CI result.
 if [ -n "$EV" ]; then
     echo "=== keyboard test: reading /dev/input/$EV (timeout 6s) ==="
     timeout 6 cat "/dev/input/$EV" > /tmp/kbd.bin 2>/dev/null
@@ -129,10 +131,10 @@ if [ -n "$EV" ]; then
     # EV_KEY(type=1) KEY_1(code=2) value=1(down) -> LE bytes "0100 0200 01000000"
     case "$HEX" in
         *0100020001000000*) echo "KEYBOARD_TEST: PASS (KEY_1 down event seen)" ;;
-        *)                  echo "KEYBOARD_TEST: FAIL (keyboard not supported on this kernel)" ;;
+        *)                  echo "KEYBOARD_TEST: FAIL"; PASS=0 ;;
     esac
 else
-    echo "KEYBOARD_TEST: FAIL (no vhci input event device; HID not supported on this kernel)"
+    echo "KEYBOARD_TEST: FAIL (no vhci input event device)"; PASS=0
 fi
 
 echo "=== server.log (tail) ==="

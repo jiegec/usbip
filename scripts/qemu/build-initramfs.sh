@@ -72,11 +72,13 @@ done
 cp "$DEMO_BIN" "$ROOT/demo_server"
 
 # --- kernel modules (decompress if needed, place under /lib/modules/$KERNEL) ---
-for mod in usbip-core vhci-hcd cdc-acm; do
+# Bundle whatever is present in the tree; built-in modules are simply absent and
+# get skipped. Order matters: dependencies first.
+for mod in usb-common usbcore hid hid-generic usbhid usbip-core vhci-hcd cdc-acm; do
     ko=$(find "$MODTREE" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
-        echo "ERROR: kernel module $mod.ko not found in $MODTREE (kernel $KERNEL)"
-        exit 1
+        echo "- kernel module $mod not present (assuming built-in)"
+        continue
     fi
     rel="${ko#"$MODTREE"/}"
     dest="$ROOT/lib/modules/$KERNEL/$rel"

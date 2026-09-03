@@ -59,11 +59,11 @@ usbip attach -r $remote_ip -b $bus_id
 ### QEMU end-to-end test
 
 The simulated devices can be verified against a real Linux kernel booted under
-QEMU. The test assembles a minimal initramfs from the running kernel, its USB/IP
-and cdc_acm modules, a static busybox and the `usbip` userspace client, then
-boots it and uses `vhci-hcd` to attach the simulated keyboard and serial device.
-Inside the guest it confirms the serial port emits `'a'` and that the keyboard
-generates a `KEY_1` input event.
+QEMU. The test assembles a minimal initramfs (busybox + usbip tool + the demo
+server + the kernel's usbip/vhci/cdc/hid modules), boots it, then uses `vhci-hcd`
+to attach the simulated keyboard and serial device. Inside the guest it confirms
+the serial port emits `'a'` and that the keyboard generates a `KEY_1` input
+event.
 
 Run it locally (requires `qemu-system-x86`, a static `busybox`, `cpio`, and the
 `usbip` tool):
@@ -72,16 +72,15 @@ Run it locally (requires `qemu-system-x86`, a static `busybox`, `cpio`, and the
 ./scripts/qemu/run-qemu-test.sh --build --dump-log
 ```
 
-It runs under KVM when available and falls back to QEMU TCG otherwise. It is
-also wired into CI via `.github/workflows/qemu.yml`. The kernel, vmlinuz and
-module tree used by the test can be overridden via the `KERNEL`, `VMLINUZ` and
-`MODTREE` environment variables (useful for testing against a downloaded
-kernel).
+It runs under KVM when available and falls back to QEMU TCG otherwise. The
+kernel, vmlinuz and module tree used can be overridden via the `KERNEL`, `VMLINUZ`
+and `MODTREE` environment variables (useful to reproduce a CI kernel locally).
 
-> **Note:** Some kernels (notably Ubuntu's `azure`/`generic` kernels) do not
-> complete HID enumeration over USB/IP, so the HID-keyboard check is best-effort
-> (it is reported but does not fail the run). The CDC ACM serial device is the
-> always-verified device.
+In CI (`scripts/qemu` + `.github/workflows/qemu.yml`) the Ubuntu **generic** kernel
+is installed and booted. This matters because the GitHub runner's Azure kernel
+has `CONFIG_USB_HID` disabled, so it cannot enumerate a simulated USB keyboard;
+the generic kernel ships the `hid`/`hid-generic`/`usbhid` modules which are loaded
+in the guest so both the serial device and the keyboard are verified.
 
 ## License
 
