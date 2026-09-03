@@ -15,6 +15,7 @@
 #   USBIP       path to the usbip userspace binary (default: auto-detect)
 #   DEMO_BIN    path to the compiled demo example (default: target/release/examples/demo)
 set -euo pipefail
+trap 'echo "ERROR: build-initramfs.sh failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 OUT="${1:?usage: build-initramfs.sh <output.cpio.gz>}"
 KERNEL="${KERNEL:-$(uname -r)}"
@@ -50,7 +51,7 @@ cp "$DEMO_BIN" "$ROOT/demo_server"
 
 # --- kernel modules (preserve layout so the guest can `find` them) ---
 for mod in usbip-core vhci-hcd cdc-acm; do
-    ko=$(find "/lib/modules/$KERNEL" \( -name "$mod.ko" -o -name "$mod.ko.*" \) 2>/dev/null | head -1)
+    ko=$(find "/lib/modules/$KERNEL" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
         echo "ERROR: kernel module $mod.ko not found for kernel $KERNEL"
         exit 1
@@ -60,7 +61,7 @@ for mod in usbip-core vhci-hcd cdc-acm; do
 done
 
 # --- usb.ids database required by the usbip tool ---
-UI="$(find /usr/share -name usb.ids 2>/dev/null | head -1)"
+UI="$(find /usr/share -name usb.ids -print -quit 2>/dev/null)"
 [ -n "$UI" ] && cp "$UI" "$ROOT/usr/share/misc/usb.ids" || echo "WARN: usb.ids not found"
 
 # --- libraries needed by usbip + demo server (copy preserving absolute path) ---
