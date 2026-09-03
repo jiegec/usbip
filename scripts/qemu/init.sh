@@ -129,8 +129,10 @@ else
     echo "KEYBOARD_TEST: FAIL (no vhci input event device)"; PASS=0
 fi
 
-echo "=== server.log (tail) ==="
-tail -40 /tmp/server.log 2>/dev/null
+echo "=== server.log (panics / HID / cdc / simulate) ==="
+grep -iE 'panicked|not implemented|unimplemented|HID key|Got bulk out|Simulate|thread' /tmp/server.log 2>/dev/null | head -60
+echo "=== server.log (tail 15) ==="
+tail -15 /tmp/server.log 2>/dev/null
 
 if [ "$PASS" = "1" ]; then
     echo "TEST_RESULT: PASS"
