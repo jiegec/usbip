@@ -27,17 +27,26 @@ jobs:
             sudo apt-get install -y linux-tools-common linux-tools-generic
           fi
 
+          # The running kernel (often the Azure cloud kernel) usually ships the
+          # usbip / cdc-acm modules in the separate `linux-modules-extra` package
+          # which is not installed on the runner. Install it so the guest can load
+          # vhci-hcd and cdc_acm.
+          sudo apt-get install -y linux-modules-extra-$(uname -r) || true
+
           echo "--- installed binaries ---"
           ls -l /usr/bin/busybox /usr/bin/qemu-system-x86_64 2>/dev/null || true
           ls -l /usr/sbin/usbip /usr/bin/usbip 2>/dev/null || true
+
+          echo "--- usbip kernel modules present? ---"
+          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/usbip/ 2>/dev/null || echo 'no usbip module dir'
+          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/class/cdc-acm.ko* 2>/dev/null || echo 'no cdc-acm module'
 
       - name: Preflight checks
         run: |
           set -euo pipefail
           echo "kernel: $(uname -r)"
           ls -l /boot/vmlinuz-$(uname -r)
-          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/usbip/ 2>/dev/null || true
-          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/class/cdc-acm.ko 2>/dev/null || true
+          find /lib/modules/$(uname -r) -name 'usbip-core.ko*' -o -name 'vhci-hcd.ko*' -o -name 'cdc-acm.ko*' 2>/dev/null || true
           command -v usbip >/dev/null 2>&1 || test -x /usr/sbin/usbip
           test -e /dev/kvm && echo "KVM: available" || echo "KVM: not available (will use TCG)"
 

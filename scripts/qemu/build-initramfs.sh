@@ -50,7 +50,7 @@ cp "$DEMO_BIN" "$ROOT/demo_server"
 
 # --- kernel modules (preserve layout so the guest can `find` them) ---
 for mod in usbip-core vhci-hcd cdc-acm; do
-    ko=$(find "/lib/modules/$KERNEL" -name "$mod.ko" 2>/dev/null | head -1)
+    ko=$(find "/lib/modules/$KERNEL" \( -name "$mod.ko" -o -name "$mod.ko.*" \) 2>/dev/null | head -1)
     if [ -z "$ko" ]; then
         echo "ERROR: kernel module $mod.ko not found for kernel $KERNEL"
         exit 1

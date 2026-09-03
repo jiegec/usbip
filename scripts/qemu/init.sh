@@ -32,7 +32,7 @@ echo "=== kernel: $K ==="
 
 echo "=== loading modules ==="
 for mod in usbip-core vhci-hcd cdc-acm; do
-    ko=$(find /lib/modules -name "$mod.ko" 2>/dev/null | head -1)
+    ko=$(find /lib/modules \( -name "$mod.ko" -o -name "$mod.ko.*" \) 2>/dev/null | head -1)
     echo "- loading $ko"
     insmod "$ko" || echo "WARN: failed to load $ko"
 done
