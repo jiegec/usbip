@@ -31,11 +31,12 @@ cargo build --release
 
 ### Examples
 
-The `examples/` directory contains three example programs:
+The `examples/` directory contains four example programs:
 
 1. **hid_keyboard**: Simulate a HID keyboard that types something every second
 2. **cdc_acm_serial**: Simulate a CDC ACM serial device that receives a character every second
 3. **host**: Act as a USB/IP server, sharing physical devices from the host machine to remote clients
+4. **demo**: Simulate a HID keyboard *and* a CDC ACM serial device together (used by the QEMU test)
 
 #### Running an example
 
@@ -54,6 +55,32 @@ usbip list -r $remote_ip
 # Attach to a device
 usbip attach -r $remote_ip -b $bus_id
 ```
+
+### QEMU end-to-end test
+
+The simulated devices can be verified against a real Linux kernel booted under
+QEMU. The test assembles a minimal initramfs (busybox + usbip tool + the demo
+server + the kernel's usbip/vhci/cdc/hid modules), boots it, then uses `vhci-hcd`
+to attach the simulated keyboard and serial device. Inside the guest it confirms
+the serial port emits `'a'` and that the keyboard generates a `KEY_1` input
+event.
+
+Run it locally (requires `qemu-system-x86`, a static `busybox`, `cpio`, and the
+`usbip` tool):
+
+```bash
+./scripts/qemu/run-qemu-test.sh --build --dump-log
+```
+
+It runs under KVM when available and falls back to QEMU TCG otherwise. The
+kernel, vmlinuz and module tree used can be overridden via the `KERNEL`, `VMLINUZ`
+and `MODTREE` environment variables (useful to reproduce a CI kernel locally).
+
+In CI (`scripts/qemu` + `.github/workflows/qemu.yml`) the Ubuntu **generic** kernel
+is installed and booted. This matters because the GitHub runner's Azure kernel
+has `CONFIG_USB_HID` disabled, so it cannot enumerate a simulated USB keyboard;
+the generic kernel ships the `hid`/`hid-generic`/`usbhid` modules which are loaded
+in the guest so both the serial device and the keyboard are verified.
 
 ## License
 

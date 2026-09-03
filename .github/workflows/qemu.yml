@@ -1,0 +1,72 @@
+name: QEMU usbip integration test
+
+# Boot a real Linux inside QEMU and verify that the *simulated* USB devices
+# exported by this crate actually work (a CDC ACM serial port and a HID keyboard).
+#
+# The runner uses an Azure kernel whose config has CONFIG_USB_HID disabled, so it
+# cannot enumerate the simulated keyboard over USB/IP. Instead we install and boot
+# the Ubuntu *generic* kernel, which ships usbhid/hid-generic as modules and
+# usbip/cdc-acm in linux-modules-extra.
+on: [push, pull_request]
+
+jobs:
+  qemu-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system packages and generic kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 busybox-static cpio usb.ids zstd xz-utils
+
+          # The usbip userspace tool ships in the distro 'usbip' package (universe),
+          # or in linux-tools. Try both and make sure a binary is available.
+          if ! sudo apt-get install -y usbip; then
+            sudo apt-get install -y linux-tools-common linux-tools-generic
+          fi
+
+          # Install the Ubuntu generic kernel image. linux-image-generic pulls the
+          # image + base modules (which include usbhid / hid / hid-generic). The
+          # usbip/vhci/cdc-acm modules live in linux-modules-extra-<ver>-generic,
+          # installed once the version is known (next step). The runner's Azure
+          # kernel lacks USB HID support, so we boot the generic kernel in QEMU.
+          sudo apt-get install -y --no-install-recommends linux-image-generic
+
+          echo "--- installed binaries ---"
+          ls -l /usr/bin/busybox /usr/bin/qemu-system-x86_64 2>/dev/null || true
+          ls -l /usr/sbin/usbip /usr/bin/usbip 2>/dev/null || true
+
+      - name: Detect generic kernel
+        id: kernel
+        run: |
+          set -euo pipefail
+          GENVER=$(ls /boot/vmlinuz-*-generic 2>/dev/null | sed 's#/boot/vmlinuz-##' | sort -V | tail -1)
+          [ -n "$GENVER" ] || { echo "ERROR: no generic kernel found"; exit 1; }
+          echo "generic kernel: $GENVER"
+          # usbip / vhci / cdc-acm modules
+          sudo apt-get install -y --no-install-recommends "linux-modules-extra-$GENVER"
+          ls -l /boot/vmlinuz-$GENVER
+          find /lib/modules/$GENVER -name 'usbhid.ko*' -o -name 'hid-generic.ko*' -o -name 'usbip-core.ko*' -o -name 'vhci-hcd.ko*' -o -name 'cdc-acm.ko*' 2>/dev/null || true
+          # Export for the test step.
+          echo "KERNEL=$GENVER" >> "$GITHUB_ENV"
+          echo "VMLINUZ=/boot/vmlinuz-$GENVER" >> "$GITHUB_ENV"
+          echo "MODTREE=/lib/modules/$GENVER" >> "$GITHUB_ENV"
+
+      - name: Run QEMU end-to-end test
+        run: |
+          ./scripts/qemu/run-qemu-test.sh --build --dump-log
+
+      - name: Upload serial console log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-serial-log
+          path: .qemu-serial.log
+          if-no-files-found: ignore
