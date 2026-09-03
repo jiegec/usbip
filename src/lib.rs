@@ -702,6 +702,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
                     }
                     trace!("Deferred URB cap reached, completing immediately");
                 }
+                // The client may reuse a seqnum that is still pending (e.g. when
+                // the deferred cap was reached and we complete immediately).
+                // Cancel the old deferred task so it cannot also complete later
+                // and cause a duplicate USBIP_RET_SUBMIT for this seqnum.
+                if let Some((_, old)) = pending.lock().unwrap().remove(&header.seqnum) {
+                    old.abort();
+                }
                 let res = handle_submit(
                     device,
                     &header,
@@ -1148,9 +1155,10 @@ mod tests {
         // No data yet: the interrupt IN transfer must remain pending, so the
         // server should NOT send a completion.
         {
+            let mut probe = [0u8; 48];
             let timed_out = tokio::time::timeout(
                 std::time::Duration::from_millis(200),
-                connection.read_exact(&mut [0u8; 48]),
+                connection.read_exact(&mut probe),
             )
             .await;
             assert!(
@@ -1239,9 +1247,10 @@ mod tests {
 
         // No data yet: none of the polls should have been answered.
         {
+            let mut probe = [0u8; 48];
             let timed_out = tokio::time::timeout(
                 std::time::Duration::from_millis(200),
-                connection.read_exact(&mut [0u8; 48]),
+                connection.read_exact(&mut probe),
             )
             .await;
             assert!(
@@ -1353,9 +1362,10 @@ mod tests {
                 .unwrap()
                 .push_event(vec![0x01]);
         }
+        let mut probe = [0u8; 48];
         let timed_out = tokio::time::timeout(
             std::time::Duration::from_millis(200),
-            connection.read_exact(&mut [0u8; 48]),
+            connection.read_exact(&mut probe),
         )
         .await;
         assert!(
@@ -1437,9 +1447,10 @@ mod tests {
         assert_eq!(data, vec![0x01]);
 
         // The replaced task must not emit a second completion.
+        let mut probe = [0u8; 48];
         let timed_out = tokio::time::timeout(
             std::time::Duration::from_millis(200),
-            connection.read_exact(&mut [0u8; 48]),
+            connection.read_exact(&mut probe),
         )
         .await;
         assert!(
@@ -1512,9 +1523,10 @@ mod tests {
         assert_eq!(actual_length, 0);
 
         // The capped/deferred URBs still have no data, so no more responses.
+        let mut probe = [0u8; 48];
         let timed_out = tokio::time::timeout(
             std::time::Duration::from_millis(200),
-            connection.read_exact(&mut [0u8; 48]),
+            connection.read_exact(&mut probe),
         )
         .await;
         assert!(
