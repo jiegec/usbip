@@ -16,6 +16,7 @@
 #   DEMO_BIN    path to the compiled demo example (default: target/release/examples/demo)
 set -euo pipefail
 trap 'echo "ERROR: build-initramfs.sh failed at line $LINENO: $BASH_COMMAND" >&2' ERR
+set -x
 
 OUT="${1:?usage: build-initramfs.sh <output.cpio.gz>}"
 KERNEL="${KERNEL:-$(uname -r)}"
