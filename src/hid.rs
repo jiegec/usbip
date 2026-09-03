@@ -1,5 +1,6 @@
 //! Implement HID device
 use super::*;
+use tokio::sync::Notify;
 
 // reference:
 // HID 1.11: https://www.usb.org/sites/default/files/documents/hid1_11.pdf
@@ -19,6 +20,10 @@ pub struct UsbHidKeyboardHandler {
     pub report_descriptor: Vec<u8>,
     pub pending_key_events: VecDeque<UsbHidKeyboardReport>,
     state: UsbHidKeyboardHandlerState,
+    /// Optional `Notify` used to wake a deferred (pending) interrupt IN URB.
+    /// `None` keeps the legacy immediate-completion behaviour.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    data_available: Option<Arc<Notify>>,
 }
 
 /// A report of a HID keyboard
@@ -56,6 +61,7 @@ impl UsbHidKeyboardHandler {
         Self {
             pending_key_events: VecDeque::new(),
             state: UsbHidKeyboardHandlerState::Idle,
+            data_available: None,
             report_descriptor: vec![
                 0x05, 0x01, // Usage Page (Generic Desktop)
                 0x09, 0x06, // Usage (Keyboard)
@@ -84,6 +90,27 @@ impl UsbHidKeyboardHandler {
                 0x81, 0x00, // Input (Data, Array)
                 0xC0, // End collection
             ],
+        }
+    }
+}
+
+impl UsbHidKeyboardHandler {
+    /// Like [`new_keyboard`](Self::new_keyboard), but opts into the deferred
+    /// (pending) interrupt IN behaviour: interrupt IN URBs stay pending until
+    /// a key is pressed, instead of being answered with an empty buffer on
+    /// every poll (issue #63).
+    pub fn new_keyboard_with_pending() -> Self {
+        let mut keyboard = Self::new_keyboard();
+        keyboard.data_available = Some(Arc::new(Notify::new()));
+        keyboard
+    }
+
+    /// Queue an ASCII key event and wake any pending interrupt IN URB.
+    pub fn press(&mut self, ascii: u8) {
+        self.pending_key_events
+            .push_back(UsbHidKeyboardReport::from_ascii(ascii));
+        if let Some(notify) = &self.data_available {
+            notify.notify_waiters();
         }
     }
 }
@@ -154,6 +181,10 @@ impl UsbInterfaceHandler for UsbHidKeyboardHandler {
             self.report_descriptor.len() as u8,
             (self.report_descriptor.len() >> 8) as u8, // wDescriptorLength[0]
         ]
+    }
+
+    fn pending_notify(&self) -> Option<Arc<Notify>> {
+        self.data_available.clone()
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

@@ -1,4 +1,5 @@
 use super::*;
+use tokio::sync::Notify;
 
 /// Represent a USB interface
 #[derive(Clone, Debug)]
@@ -32,6 +33,22 @@ pub trait UsbInterfaceHandler: std::fmt::Debug {
         setup: SetupPacket,
         req: &[u8],
     ) -> Result<Vec<u8>>;
+
+    /// Gets a `Notify` that is signaled whenever the device has new data to
+    /// report on an interrupt IN endpoint.
+    ///
+    /// When this returns `Some`, an interrupt IN URB that produces no data is
+    /// kept **pending** by the server instead of being answered immediately
+    /// with an empty buffer. The URB is completed as soon as the handler
+    /// produces data and signals this `Notify`. This avoids a flood of empty
+    /// completions when clients (e.g. `usbip-win2`) poll the endpoint at a very
+    /// high rate (issue #63).
+    ///
+    /// Return `None` to keep the previous behaviour of answering interface URBs
+    /// immediately (possibly with an empty buffer).
+    fn pending_notify(&self) -> Option<Arc<Notify>> {
+        None
+    }
 
     /// Helper to downcast to actual struct
     ///
