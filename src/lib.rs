@@ -486,7 +486,8 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
     // Deferred (pending) interrupt IN transfers keyed by seqnum, shared with the
     // writer task so a completion can be dropped if its URB was unlinked. The
     // u64 token disambiguates a reused seqnum.
-    let pending: Arc<Mutex<HashMap<u32, DeferredUrb>>> = Arc::new(Mutex::new(HashMap::new()));
+    let pending: Arc<tokio::sync::Mutex<HashMap<u32, DeferredUrb>>> =
+        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
     let mut next_token: u64 = 0;
     let mut current_import_device_id: Option<String> = None;
 
@@ -507,7 +508,7 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                         _ => None,
                     };
                     if let Some(seqnum) = seqnum {
-                        let mut p = writer_pending.lock().unwrap();
+                        let mut p = writer_pending.lock().await;
                         let matches = p
                             .get(&seqnum)
                             .map(|(token, _)| token == msg_token)
@@ -642,7 +643,7 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                     // (potential DoS). When the cap is reached, fall through and
                     // complete the URB immediately instead of deferring.
                     let can_defer = {
-                        let p = pending.lock().unwrap();
+                        let p = pending.lock().await;
                         // A reused seqnum does not increase concurrency (it
                         // replaces an existing pending entry), so allow it even
                         // at the cap; only *new* seqnums are bounded.
@@ -663,7 +664,16 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                         // replacement entry.
                         let token = next_token;
                         next_token += 1;
+                        // The task must not enqueue its completion before the
+                        // (seqnum -> token) entry is inserted into `pending`,
+                        // otherwise on a multi-thread runtime it could race ahead
+                        // and the writer would drop a valid completion, leaving
+                        // the URB pending forever.
+                        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
                         let task = tokio::spawn(async move {
+                            if go_rx.await.is_err() {
+                                return;
+                            }
                             loop {
                                 let res = handle_submit(
                                     &device,
@@ -698,12 +708,13 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                         // If the client reuses a seqnum, abort the replaced task
                         // so it cannot later emit a response that no longer
                         // matches the pending map.
-                        let mut p = pending.lock().unwrap();
+                        let mut p = pending.lock().await;
                         if let Some((_, old)) = p.remove(&header.seqnum) {
                             old.abort();
                         }
                         p.insert(header.seqnum, (token, task));
                         drop(p);
+                        let _ = go_tx.send(());
                         trace!("Deferred USBIP_CMD_SUBMIT (seqnum {})", header.seqnum);
                         continue;
                     }
@@ -713,7 +724,7 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                 // the deferred cap was reached and we complete immediately).
                 // Cancel the old deferred task so it cannot also complete later
                 // and cause a duplicate USBIP_RET_SUBMIT for this seqnum.
-                if let Some((_, old)) = pending.lock().unwrap().remove(&header.seqnum) {
+                if let Some((_, old)) = pending.lock().await.remove(&header.seqnum) {
                     old.abort();
                 }
                 let res = handle_submit(
@@ -740,7 +751,7 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
                 header.command = USBIP_RET_UNLINK.into();
 
                 // Cancel a still-pending deferred transfer, if any.
-                if let Some((_, task)) = pending.lock().unwrap().remove(&unlink_seqnum) {
+                if let Some((_, task)) = pending.lock().await.remove(&unlink_seqnum) {
                     task.abort();
                 }
 
@@ -755,7 +766,7 @@ pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'st
 
     // Cleanup: abort pending deferred transfers, close the channel so the writer
     // task drains and exits, then wait for it.
-    for (_, (_, task)) in pending.lock().unwrap().drain() {
+    for (_, (_, task)) in pending.lock().await.drain() {
         task.abort();
     }
     drop(delayed_tx);
