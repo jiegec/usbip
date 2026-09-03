@@ -17,10 +17,25 @@
 set -euo pipefail
 trap 'echo "ERROR: build-initramfs.sh failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
+# Find a real (ELF) usbip binary. On Ubuntu the linux-tools-common package puts a
+# tiny shell *script* at /usr/bin/usbip that execs a versioned binary; the usbip
+# package installs the real binary at /usr/sbin/usbip. Prefer a real ELF.
+find_usbip_bin() {
+    local c
+    for c in /usr/sbin/usbip /usr/lib/linux-tools/*/usbip /usr/bin/usbip; do
+        [ -f "$c" ] || continue
+        if head -c4 "$c" 2>/dev/null | grep -q ELF; then
+            echo "$c"
+            return 0
+        fi
+    done
+    command -v usbip 2>/dev/null || echo /usr/sbin/usbip
+}
+
 OUT="${1:?usage: build-initramfs.sh <output.cpio.gz>}"
 KERNEL="${KERNEL:-$(uname -r)}"
 BUSYBOX="${BUSYBOX:-$(command -v busybox)}"
-USBIP="${USBIP:-$(command -v usbip || echo /usr/sbin/usbip)}"
+USBIP="${USBIP:-$(find_usbip_bin)}"
 DEMO_BIN="${DEMO_BIN:-target/release/examples/demo}"
 
 [ -e "$BUSYBOX" ] || { echo "ERROR: busybox not found at $BUSYBOX"; exit 1; }
