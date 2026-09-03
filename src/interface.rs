@@ -44,6 +44,13 @@ pub trait UsbInterfaceHandler: std::fmt::Debug {
     /// completions when clients (e.g. `usbip-win2`) poll the endpoint at a very
     /// high rate (issue #63).
     ///
+    /// The implementation should signal the `Notify` with
+    /// [`Notify::notify_one`](tokio::sync::Notify::notify_one) — not
+    /// `notify_waiters()` — so that a signal is not lost if it arrives while
+    /// the server task is between checking for data and awaiting
+    /// [`Notify::notified`](tokio::sync::Notify::notified), and so that a
+    /// single event completes a single pending URB.
+    ///
     /// Return `None` to keep the previous behaviour of answering interface URBs
     /// immediately (possibly with an empty buffer).
     fn pending_notify(&self) -> Option<Arc<Notify>> {

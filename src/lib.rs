@@ -395,7 +395,17 @@ async fn send_deferred_response<W: AsyncWriteExt + Unpin>(
     pending: &mut HashMap<u32, tokio::task::JoinHandle<()>>,
 ) -> Result<()> {
     if let UsbIpResponse::UsbIpRetSubmit { header, .. } = &res {
-        pending.remove(&header.seqnum);
+        // Only send a completion if this seqnum is still pending. If a
+        // USBIP_CMD_UNLINK already removed it, the client cancelled this URB
+        // and we must not complete it (otherwise we would respond to a URB the
+        // client explicitly unlinked).
+        if pending.remove(&header.seqnum).is_none() {
+            trace!(
+                "Dropped deferred USB/IP response for unlinked seqnum {}",
+                header.seqnum
+            );
+            return Ok(());
+        }
     }
     res.write_to_socket(writer).await?;
     trace!("Sent deferred USB/IP response");
@@ -727,7 +737,10 @@ mod tests {
 
         fn push_event(&mut self, event: Vec<u8>) {
             self.data = Some(event);
-            self.notify.notify_waiters();
+            // notify_one stores a permit when no task is waiting yet (so the
+            // deferred task cannot miss the signal), and wakes exactly one
+            // waiter (one event completes one URB).
+            self.notify.notify_one();
         }
     }
 
@@ -1184,5 +1197,98 @@ mod tests {
         let mut data = vec![0u8; actual_length];
         connection.read_exact(&mut data).await.unwrap();
         assert_eq!(data, vec![0x01]);
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_unlink_drops_deferred_response() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Submit an interrupt IN URB (seqnum 1); it is deferred.
+        let submit = UsbIpCommand::UsbIpCmdSubmit {
+            header: usbip_protocol::UsbIpHeaderBasic {
+                command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                seqnum: 1,
+                devid: 0,
+                direction: 1, // IN
+                ep: 1,        // 0x81 after | 0x80
+            },
+            transfer_flags: 0,
+            transfer_buffer_length: 8,
+            start_frame: 0,
+            number_of_packets: 0,
+            interval: 0,
+            setup: [0; 8],
+            data: vec![],
+            iso_packet_descriptor: vec![],
+        };
+        connection
+            .write_all(submit.to_bytes().as_slice())
+            .await
+            .unwrap();
+
+        // Unlink seqnum 1: the pending transfer must be cancelled.
+        let unlink = UsbIpCommand::UsbIpCmdUnlink {
+            header: usbip_protocol::UsbIpHeaderBasic {
+                command: usbip_protocol::USBIP_CMD_UNLINK.into(),
+                seqnum: 2,
+                devid: 0,
+                direction: 0,
+                ep: 0,
+            },
+            unlink_seqnum: 1,
+        };
+        connection
+            .write_all(unlink.to_bytes().as_slice())
+            .await
+            .unwrap();
+
+        // We only expect the USBIP_RET_UNLINK, not a USBIP_RET_SUBMIT.
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let command = u32::from_be_bytes(header_buf[0..4].try_into().unwrap());
+        assert_eq!(command, usbip_protocol::USBIP_RET_UNLINK.into());
+
+        // Even though data now becomes available, the cancelled URB must NOT be
+        // completed with a deferred response.
+        {
+            let mut h = interrupt_handler.lock().unwrap();
+            h.as_any()
+                .downcast_mut::<TestInterruptHandler>()
+                .unwrap()
+                .push_event(vec![0x01]);
+        }
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            connection.read_exact(&mut [0u8; 48]),
+        )
+        .await;
+        assert!(
+            timed_out.is_err(),
+            "an unlinked URB must not be completed with a deferred response"
+        );
     }
 }

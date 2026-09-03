@@ -105,12 +105,14 @@ impl UsbHidKeyboardHandler {
         keyboard
     }
 
-    /// Queue an ASCII key event and wake any pending interrupt IN URB.
+    /// Queue an ASCII key event and wake a pending interrupt IN URB.
     pub fn press(&mut self, ascii: u8) {
         self.pending_key_events
             .push_back(UsbHidKeyboardReport::from_ascii(ascii));
+        // notify_one stores a permit when no task is waiting yet, so the signal
+        // is not lost; it also wakes exactly one waiter (one event -> one URB).
         if let Some(notify) = &self.data_available {
-            notify.notify_waiters();
+            notify.notify_one();
         }
     }
 }
