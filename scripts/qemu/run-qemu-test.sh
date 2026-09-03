@@ -47,38 +47,51 @@ rm -f "$SERIAL_LOG"
 echo "=== building initramfs ==="
 DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/initramfs.cpio.gz" || exit 1
 
-QEMU_CMD=(qemu-system-x86_64 -m 512 -smp 2)
+# /boot/vmlinuz-* is usually root-only; copy to a readable temp path for QEMU.
+VMLINUZ_SAFE="$WORK/vmlinuz"
+cp "$VMLINUZ" "$VMLINUZ_SAFE"
 
-# Use hardware acceleration if /dev/kvm is present, otherwise fall back to TCG.
-# FORCE_TCG=1 forces software emulation (useful for debugging / CI runners w/o KVM).
-if [ "${FORCE_TCG:-0}" != "1" ] && [ -e /dev/kvm ] && [ -w /dev/kvm ]; then
-    QEMU_CMD+=(-enable-kvm -cpu host)
-    echo "=== using KVM acceleration ==="
+QEMU_SUDO=()
+QEMU_ACCEL=()
+if [ "${FORCE_TCG:-0}" != "1" ] && [ -e /dev/kvm ]; then
+    # Prefer hardware acceleration. On GitHub runners /dev/kvm typically needs
+    # root, for which passwordless sudo is available.
+    if [ -w /dev/kvm ]; then
+        QEMU_ACCEL=(-enable-kvm -cpu host)
+        echo "=== using KVM acceleration ==="
+    elif command -v sudo >/dev/null 2>&1; then
+        QEMU_SUDO=(sudo)
+        QEMU_ACCEL=(-enable-kvm -cpu host)
+        echo "=== using KVM acceleration (via sudo) ==="
+    else
+        QEMU_ACCEL=(-cpu max)
+        echo "=== /dev/kvm not writable and no sudo, falling back to TCG ==="
+    fi
 else
-    QEMU_CMD+=(-cpu max)
+    QEMU_ACCEL=(-cpu max)
     echo "=== /dev/kvm not available, falling back to TCG (slow) ==="
 fi
 
-QEMU_CMD+=(
-    -kernel "$VMLINUZ"
-    -initrd "$WORK/initramfs.cpio.gz"
-    -append "console=ttyS0 panic=-1"
-    -display none
-    -serial "file:$SERIAL_LOG"
-    -monitor none
+QEMU_CMD=("${QEMU_SUDO[@]}" qemu-system-x86_64 -m 512 -smp 2 "${QEMU_ACCEL[@]}" \
+    -kernel "$VMLINUZ_SAFE" \
+    -initrd "$WORK/initramfs.cpio.gz" \
+    -append "console=ttyS0 panic=-1" \
+    -display none \
+    -serial "file:$SERIAL_LOG" \
+    -monitor none \
     -no-reboot
 )
 
-KVM_FAIL=0
 echo "=== launching QEMU ==="
+KVM_FAIL=0
 if [[ " ${QEMU_CMD[*]} " == *" -enable-kvm "* ]]; then
     timeout 300 "${QEMU_CMD[@]}" 2>"$WORK/qemu.err" || { KVM_FAIL=$?; }
     # If KVM failed (e.g. permission), retry with TCG once.
     if [ "$KVM_FAIL" != "0" ]; then
         echo "=== KVM run returned $KVM_FAIL, retrying with TCG ==="
         rm -f "$SERIAL_LOG"
-        timeout 600 qemu-system-x86_64 -m 512 -smp 2 -cpu max \
-            -kernel "$VMLINUZ" \
+        timeout 600 "${QEMU_SUDO[@]}" qemu-system-x86_64 -m 512 -smp 2 -cpu max \
+            -kernel "$VMLINUZ_SAFE" \
             -initrd "$WORK/initramfs.cpio.gz" \
             -append "console=ttyS0 panic=-1" \
             -display none -serial "file:$SERIAL_LOG" -monitor none -no-reboot \
@@ -87,6 +100,9 @@ if [[ " ${QEMU_CMD[*]} " == *" -enable-kvm "* ]]; then
 else
     timeout 600 "${QEMU_CMD[@]}" 2>"$WORK/qemu.err" || true
 fi
+
+# Ensure the serial log is readable by the (non-root) caller for artifact upload.
+[ -e "$SERIAL_LOG" ] && [ -n "${QEMU_SUDO[*]}" ] && sudo chmod 644 "$SERIAL_LOG" 2>/dev/null || true
 
 echo "=== serial log (tail) ==="
 tail -80 "$SERIAL_LOG" || true
