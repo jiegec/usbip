@@ -13,6 +13,7 @@ pub(crate) mod tests {
         io::*,
         net::SocketAddr,
         pin::Pin,
+        sync::{Arc, Mutex},
         task::{Context, Poll},
     };
     use tokio::{
@@ -22,14 +23,18 @@ pub(crate) mod tests {
 
     pub(crate) struct MockSocket {
         pub input: Cursor<Vec<u8>>,
-        pub output: Vec<u8>,
+        pub output: Arc<Mutex<Vec<u8>>>,
     }
 
     impl MockSocket {
         pub(crate) fn new(input: Vec<u8>) -> Self {
+            Self::new_with_output(input, Arc::new(Mutex::new(Vec::new())))
+        }
+
+        pub(crate) fn new_with_output(input: Vec<u8>, output: Arc<Mutex<Vec<u8>>>) -> Self {
             Self {
                 input: Cursor::new(input),
-                output: vec![],
+                output,
             }
         }
     }
@@ -52,7 +57,7 @@ pub(crate) mod tests {
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<Result<usize>> {
-            self.get_mut().output.extend_from_slice(buf);
+            self.get_mut().output.lock().unwrap().extend_from_slice(buf);
             Poll::Ready(Ok(buf.len()))
         }
 

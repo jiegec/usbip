@@ -37,7 +37,7 @@ pub use interface::*;
 pub use setup::*;
 pub use util::*;
 
-use crate::usbip_protocol::{USBIP_RET_SUBMIT, USBIP_RET_UNLINK, UsbIpResponse};
+use crate::usbip_protocol::{USBIP_RET_SUBMIT, USBIP_RET_UNLINK, UsbIpHeaderBasic, UsbIpResponse};
 
 /// Main struct of a USB/IP server
 #[derive(Default, Debug)]
@@ -388,13 +388,156 @@ impl UsbIpServer {
     }
 }
 
-pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-    mut socket: &mut T,
+/// Maximum number of concurrent deferred (pending) interrupt IN transfers per
+/// connection. Beyond this, new interrupt IN URBs are completed immediately
+/// instead of being deferred, so a misbehaving client cannot drive unbounded
+/// task growth (potential DoS).
+const MAX_PENDING_DEFERRED: usize = 64;
+
+/// A deferred (pending) interrupt IN URB: its per-URB token and the task that
+/// completes it.
+type DeferredUrb = (u64, tokio::task::JoinHandle<()>);
+
+/// A response queued to the background writer. Deferred completions may be
+/// dropped if the URB was cancelled by `USBIP_CMD_UNLINK` or superseded by a
+/// reused `seqnum`.
+enum Outbound {
+    /// A response that must always be written (e.g. devlist, import, unlink,
+    /// and immediate submissions).
+    Immediate(UsbIpResponse),
+    /// A deferred interrupt IN completion. Carries a per-URB token so that a
+    /// stale completion (from a superseded URB) can be dropped without removing
+    /// the newer pending entry for the same `seqnum`.
+    Deferred(UsbIpResponse, u64),
+}
+
+async fn handle_submit(
+    device: &UsbDevice,
+    header: &UsbIpHeaderBasic,
+    real_ep: u32,
+    out: bool,
+    transfer_buffer_length: u32,
+    setup: [u8; 8],
+    data: &[u8],
+) -> UsbIpResponse {
+    match device.find_ep(real_ep as u8) {
+        None => {
+            warn!("Endpoint {real_ep:02x?} not found");
+            UsbIpResponse::usbip_ret_submit_fail(header)
+        }
+        Some((ep, intf)) => {
+            trace!("->Endpoint {ep:02x?}");
+            trace!("->Setup {setup:02x?}");
+            trace!("->Request {data:02x?}");
+            let resp = device
+                .handle_urb(
+                    ep,
+                    intf,
+                    transfer_buffer_length,
+                    SetupPacket::parse(&setup),
+                    data,
+                )
+                .await;
+
+            match resp {
+                Ok(resp) => {
+                    if out {
+                        trace!("<-Wrote {}", data.len());
+                    } else {
+                        trace!("<-Resp {resp:02x?}");
+                    }
+                    let actual_length = if out {
+                        debug_assert!(
+                            resp.is_empty(),
+                            "OUT transfer should return empty response buffer"
+                        );
+                        data.len() as u32
+                    } else {
+                        resp.len() as u32
+                    };
+                    UsbIpResponse::usbip_ret_submit_success(
+                        header,
+                        0,
+                        0,
+                        actual_length,
+                        resp,
+                        vec![],
+                    )
+                }
+                Err(err) => {
+                    warn!("Error handling URB: {err}");
+                    UsbIpResponse::usbip_ret_submit_fail(header)
+                }
+            }
+        }
+    }
+}
+
+fn conn_closed() -> std::io::Error {
+    std::io::Error::other("connection closed")
+}
+
+pub(crate) async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
+    socket: T,
     server: Arc<UsbIpServer>,
 ) -> Result<()> {
+    let (mut reader, mut writer) = tokio::io::split(socket);
+    let (delayed_tx, mut delayed_rx) = tokio::sync::mpsc::channel::<Outbound>(64);
+    // Deferred (pending) interrupt IN transfers keyed by seqnum, shared with the
+    // writer task so a completion can be dropped if its URB was unlinked. The
+    // u64 token disambiguates a reused seqnum.
+    let pending: Arc<tokio::sync::Mutex<HashMap<u32, DeferredUrb>>> =
+        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let mut next_token: u64 = 0;
     let mut current_import_device_id: Option<String> = None;
-    loop {
-        let command = UsbIpCommand::read_from_socket(&mut socket).await;
+
+    // A background writer task. Every response (immediate and deferred) is sent
+    // through the channel, so the protocol read below is never cancelled
+    // mid-command (cancel-safety, issue #63).
+    let writer_pending = pending.clone();
+    let writer_task = tokio::spawn(async move {
+        while let Some(msg) = delayed_rx.recv().await {
+            // A deferred completion should be written only if its token still
+            // matches the pending entry (i.e. it was not cancelled by UNLINK or
+            // superseded by a reused seqnum). If it is stale, drop it without
+            // touching the newer pending entry.
+            let should_write = match &msg {
+                Outbound::Deferred(res, msg_token) => {
+                    let seqnum = match res {
+                        UsbIpResponse::UsbIpRetSubmit { header, .. } => Some(header.seqnum),
+                        _ => None,
+                    };
+                    if let Some(seqnum) = seqnum {
+                        let mut p = writer_pending.lock().await;
+                        let matches = p
+                            .get(&seqnum)
+                            .map(|(token, _)| token == msg_token)
+                            .unwrap_or(false);
+                        if matches {
+                            p.remove(&seqnum);
+                        }
+                        drop(p);
+                        matches
+                    } else {
+                        true
+                    }
+                }
+                Outbound::Immediate(_) => true,
+            };
+            if should_write {
+                let res = match msg {
+                    Outbound::Immediate(res) => res,
+                    Outbound::Deferred(res, _) => res,
+                };
+                if res.write_to_socket(&mut writer).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    let result: Result<()> = 'connection: loop {
+        let command = UsbIpCommand::read_from_socket(&mut reader).await;
         if let Err(err) = command {
             if let Some(dev_id) = current_import_device_id {
                 let mut used_devices = server.used_devices.write().await;
@@ -404,12 +547,11 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     None => unreachable!(),
                 }
             }
-
             if err.kind() == ErrorKind::UnexpectedEof {
                 info!("Remote closed the connection");
-                return Ok(());
+                break 'connection Ok(());
             } else {
-                return Err(err);
+                break 'connection Err(err);
             }
         }
 
@@ -422,11 +564,10 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
             UsbIpCommand::OpReqDevlist { .. } => {
                 trace!("Got OP_REQ_DEVLIST");
                 let devices = server.available_devices.read().await;
-
-                // OP_REP_DEVLIST
-                UsbIpResponse::op_rep_devlist(&devices)
-                    .write_to_socket(socket)
-                    .await?;
+                let res = Outbound::Immediate(UsbIpResponse::op_rep_devlist(&devices));
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent OP_REP_DEVLIST");
             }
             UsbIpCommand::OpReqImport { busid, .. } => {
@@ -452,11 +593,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 }
 
                 let res = if let Some(dev) = current_import_device {
-                    UsbIpResponse::op_rep_import_success(dev)
+                    Outbound::Immediate(UsbIpResponse::op_rep_import_success(dev))
                 } else {
-                    UsbIpResponse::op_rep_import_fail()
+                    Outbound::Immediate(UsbIpResponse::op_rep_import_fail())
                 };
-                res.write_to_socket(socket).await?;
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent OP_REP_IMPORT");
             }
             UsbIpCommand::UsbIpCmdSubmit {
@@ -474,58 +617,129 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
 
                 header.command = USBIP_RET_SUBMIT.into();
 
-                let res = match device.find_ep(real_ep as u8) {
-                    None => {
-                        warn!("Endpoint {real_ep:02x?} not found");
-                        UsbIpResponse::usbip_ret_submit_fail(&header)
-                    }
-                    Some((ep, intf)) => {
-                        trace!("->Endpoint {ep:02x?}");
-                        trace!("->Setup {setup:02x?}");
-                        trace!("->Request {data:02x?}");
-                        let resp = device
-                            .handle_urb(
-                                ep,
-                                intf,
-                                transfer_buffer_length,
-                                SetupPacket::parse(&setup),
-                                &data,
-                            )
-                            .await;
-
-                        match resp {
-                            Ok(resp) => {
-                                if out {
-                                    trace!("<-Wrote {}", data.len());
-                                } else {
-                                    trace!("<-Resp {resp:02x?}");
-                                }
-                                let actual_length = if out {
-                                    debug_assert!(
-                                        resp.is_empty(),
-                                        "OUT transfer should return empty response buffer"
-                                    );
-                                    data.len() as u32
-                                } else {
-                                    resp.len() as u32
-                                };
-                                UsbIpResponse::usbip_ret_submit_success(
-                                    &header,
-                                    0,
-                                    0,
-                                    actual_length,
-                                    resp,
-                                    vec![],
-                                )
-                            }
-                            Err(err) => {
-                                warn!("Error handling URB: {err}");
-                                UsbIpResponse::usbip_ret_submit_fail(&header)
-                            }
+                // For interrupt IN endpoints whose handler exposes a
+                // "data available" Notify, defer the completion until real data
+                // is available instead of replying with an empty buffer. This
+                // avoids flooding clients (e.g. usbip-win2) that poll at a very
+                // high rate (issue #63).
+                let notify = if !out {
+                    device.find_ep(real_ep as u8).and_then(|(ep, intf)| {
+                        let intf = intf?;
+                        if ep.direction() == Direction::In
+                            && ep.attributes == EndpointAttributes::Interrupt as u8
+                        {
+                            intf.handler.lock().unwrap().pending_notify()
+                        } else {
+                            None
                         }
-                    }
+                    })
+                } else {
+                    None
                 };
-                res.write_to_socket(socket).await?;
+
+                if let Some(notify) = notify {
+                    // Bound the number of concurrent deferred transfers so a
+                    // misbehaving client cannot drive unbounded task growth
+                    // (potential DoS). When the cap is reached, fall through and
+                    // complete the URB immediately instead of deferring.
+                    let can_defer = {
+                        let p = pending.lock().await;
+                        // A reused seqnum does not increase concurrency (it
+                        // replaces an existing pending entry), so allow it even
+                        // at the cap; only *new* seqnums are bounded.
+                        p.contains_key(&header.seqnum) || p.len() < MAX_PENDING_DEFERRED
+                    };
+                    if can_defer {
+                        // Defer: spawn a task that waits for the handler to
+                        // signal data. The response is queued to the writer
+                        // (via the response channel) only once there is actually
+                        // data to send.
+                        let device = device.clone();
+                        let header2 = header.clone();
+                        let tx = delayed_tx.clone();
+                        // A per-URB token disambiguates a reused seqnum: if the
+                        // previous deferred task for this seqnum managed to
+                        // enqueue a completion before it was aborted, the writer
+                        // will drop it as stale instead of removing the
+                        // replacement entry.
+                        let token = next_token;
+                        next_token += 1;
+                        // The task must not enqueue its completion before the
+                        // (seqnum -> token) entry is inserted into `pending`,
+                        // otherwise on a multi-thread runtime it could race ahead
+                        // and the writer would drop a valid completion, leaving
+                        // the URB pending forever.
+                        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+                        let task = tokio::spawn(async move {
+                            if go_rx.await.is_err() {
+                                return;
+                            }
+                            loop {
+                                let res = handle_submit(
+                                    &device,
+                                    &header2,
+                                    real_ep,
+                                    out,
+                                    transfer_buffer_length,
+                                    setup,
+                                    &data,
+                                )
+                                .await;
+                                let should_send = match &res {
+                                    UsbIpResponse::UsbIpRetSubmit {
+                                        status,
+                                        actual_length,
+                                        transfer_buffer,
+                                        ..
+                                    } => {
+                                        *status != 0
+                                            || *actual_length > 0
+                                            || !transfer_buffer.is_empty()
+                                    }
+                                    _ => true,
+                                };
+                                if should_send {
+                                    let _ = tx.send(Outbound::Deferred(res, token)).await;
+                                    break;
+                                }
+                                notify.notified().await;
+                            }
+                        });
+                        // If the client reuses a seqnum, abort the replaced task
+                        // so it cannot later emit a response that no longer
+                        // matches the pending map.
+                        let mut p = pending.lock().await;
+                        if let Some((_, old)) = p.remove(&header.seqnum) {
+                            old.abort();
+                        }
+                        p.insert(header.seqnum, (token, task));
+                        drop(p);
+                        let _ = go_tx.send(());
+                        trace!("Deferred USBIP_CMD_SUBMIT (seqnum {})", header.seqnum);
+                        continue;
+                    }
+                    trace!("Deferred URB cap reached, completing immediately");
+                }
+                // The client may reuse a seqnum that is still pending (e.g. when
+                // the deferred cap was reached and we complete immediately).
+                // Cancel the old deferred task so it cannot also complete later
+                // and cause a duplicate USBIP_RET_SUBMIT for this seqnum.
+                if let Some((_, old)) = pending.lock().await.remove(&header.seqnum) {
+                    old.abort();
+                }
+                let res = handle_submit(
+                    device,
+                    &header,
+                    real_ep,
+                    out,
+                    transfer_buffer_length,
+                    setup,
+                    &data,
+                )
+                .await;
+                if delayed_tx.send(Outbound::Immediate(res)).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent USBIP_RET_SUBMIT");
             }
             UsbIpCommand::UsbIpCmdUnlink {
@@ -536,12 +750,28 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
 
                 header.command = USBIP_RET_UNLINK.into();
 
-                let res = UsbIpResponse::usbip_ret_unlink_success(&header);
-                res.write_to_socket(socket).await?;
+                // Cancel a still-pending deferred transfer, if any.
+                if let Some((_, task)) = pending.lock().await.remove(&unlink_seqnum) {
+                    task.abort();
+                }
+
+                let res = Outbound::Immediate(UsbIpResponse::usbip_ret_unlink_success(&header));
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent USBIP_RET_UNLINK");
             }
         }
+    };
+
+    // Cleanup: abort pending deferred transfers, close the channel so the writer
+    // task drains and exits, then wait for it.
+    for (_, (_, task)) in pending.lock().await.drain() {
+        task.abort();
     }
+    drop(delayed_tx);
+    let _ = writer_task.await;
+    result
 }
 
 /// Spawn a USB/IP server at `addr` using [TcpListener]
@@ -551,11 +781,11 @@ pub async fn server(addr: SocketAddr, server: Arc<UsbIpServer>) {
     let server = async move {
         loop {
             match listener.accept().await {
-                Ok((mut socket, _addr)) => {
+                Ok((socket, _addr)) => {
                     info!("Got connection from {:?}", socket.peer_addr());
                     let new_server = server.clone();
                     tokio::spawn(async move {
-                        let res = handler(&mut socket, new_server).await;
+                        let res = handler(socket, new_server).await;
                         info!("Handler ended with {res:?}");
                     });
                 }
@@ -571,6 +801,7 @@ pub async fn server(addr: SocketAddr, server: Arc<UsbIpServer>) {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::Notify;
     use tokio::{net::TcpStream, task::JoinSet};
 
     use super::*;
@@ -580,6 +811,56 @@ mod tests {
     };
 
     const SINGLE_DEVICE_BUSID: &str = "0-0-0";
+
+    /// A test handler that opts into the deferred interrupt IN behaviour
+    /// (issue #63): it stays silent until `push_event` is called.
+    #[derive(Debug)]
+    struct TestInterruptHandler {
+        data: Option<Vec<u8>>,
+        notify: Arc<Notify>,
+    }
+
+    impl TestInterruptHandler {
+        fn new() -> Self {
+            Self {
+                data: None,
+                notify: Arc::new(Notify::new()),
+            }
+        }
+
+        fn push_event(&mut self, event: Vec<u8>) {
+            self.data = Some(event);
+            // notify_one stores a permit when no task is waiting yet (so the
+            // deferred task cannot miss the signal), and wakes exactly one
+            // waiter (one event completes one URB).
+            self.notify.notify_one();
+        }
+    }
+
+    impl UsbInterfaceHandler for TestInterruptHandler {
+        fn get_class_specific_descriptor(&self) -> Vec<u8> {
+            vec![]
+        }
+
+        fn handle_urb(
+            &mut self,
+            _interface: &UsbInterface,
+            _ep: UsbEndpoint,
+            _transfer_buffer_length: u32,
+            _setup: SetupPacket,
+            _req: &[u8],
+        ) -> Result<Vec<u8>> {
+            Ok(self.data.take().unwrap_or_default())
+        }
+
+        fn pending_notify(&self) -> Option<Arc<Notify>> {
+            Some(self.notify.clone())
+        }
+
+        fn as_any(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
 
     fn new_server_with_single_device() -> UsbIpServer {
         UsbIpServer::new_simulated(vec![UsbDevice::new(0).with_interface(
@@ -621,11 +902,12 @@ mod tests {
         let server = UsbIpServer::new_simulated(vec![]);
         let req = UsbIpCommand::OpReqDevlist { status: 0 };
 
-        let mut mock_socket = MockSocket::new(req.to_bytes());
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req.to_bytes(), output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
 
         assert_eq!(
-            mock_socket.output,
+            *output.lock().unwrap(),
             UsbIpResponse::op_rep_devlist(&[]).to_bytes(),
         );
     }
@@ -636,14 +918,15 @@ mod tests {
         let server = new_server_with_single_device();
         let req = UsbIpCommand::OpReqDevlist { status: 0 };
 
-        let mut mock_socket = MockSocket::new(req.to_bytes());
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req.to_bytes(), output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
 
         // OP_REP_DEVLIST
         // header: 0xC
         // device: 0x138
         // interface: 4 * 0x1
-        assert_eq!(mock_socket.output.len(), 0xC + 0x138 + 4);
+        assert_eq!(output.lock().unwrap().len(), 0xC + 0x138 + 4);
     }
 
     #[tokio::test]
@@ -653,10 +936,11 @@ mod tests {
 
         // OP_REQ_IMPORT
         let req = op_req_import(SINGLE_DEVICE_BUSID);
-        let mut mock_socket = MockSocket::new(req);
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req, output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
         // OP_REQ_IMPORT
-        assert_eq!(mock_socket.output.len(), 0x140);
+        assert_eq!(output.lock().unwrap().len(), 0x140);
     }
 
     #[tokio::test]
@@ -828,9 +1112,444 @@ mod tests {
             .to_bytes(),
         );
 
-        let mut mock_socket = MockSocket::new(req);
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req, output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
         // OP_REQ_IMPORT + USBIP_CMD_SUBMIT + Device Descriptor
-        assert_eq!(mock_socket.output.len(), 0x140 + 0x30 + 0x12);
+        assert_eq!(output.lock().unwrap().len(), 0x140 + 0x30 + 0x12);
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_defers_until_data_available() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Submit an interrupt IN URB (direction IN, endpoint 0x81).
+        let submit = UsbIpCommand::UsbIpCmdSubmit {
+            header: usbip_protocol::UsbIpHeaderBasic {
+                command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                seqnum: 1,
+                devid: 0,
+                direction: 1, // IN
+                ep: 1,        // 0x81 after | 0x80
+            },
+            transfer_flags: 0,
+            transfer_buffer_length: 8,
+            start_frame: 0,
+            number_of_packets: 0,
+            interval: 0,
+            setup: [0; 8],
+            data: vec![],
+            iso_packet_descriptor: vec![],
+        };
+        connection
+            .write_all(submit.to_bytes().as_slice())
+            .await
+            .unwrap();
+
+        // No data yet: the interrupt IN transfer must remain pending, so the
+        // server should NOT send a completion.
+        {
+            let mut probe = [0u8; 48];
+            let timed_out = tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                connection.read_exact(&mut probe),
+            )
+            .await;
+            assert!(
+                timed_out.is_err(),
+                "interrupt IN should be deferred until data is available"
+            );
+        }
+
+        // Now signal a data event and let the server know there is data.
+        {
+            let mut h = interrupt_handler.lock().unwrap();
+            h.as_any()
+                .downcast_mut::<TestInterruptHandler>()
+                .unwrap()
+                .push_event(vec![0x01]);
+        }
+
+        // The server should now complete the pending URB with the event.
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let command = u32::from_be_bytes(header_buf[0..4].try_into().unwrap());
+        assert_eq!(command, usbip_protocol::USBIP_RET_SUBMIT.into());
+        let seqnum = u32::from_be_bytes(header_buf[4..8].try_into().unwrap());
+        assert_eq!(seqnum, 1);
+        let actual_length = u32::from_be_bytes(header_buf[24..28].try_into().unwrap()) as usize;
+        assert_eq!(actual_length, 1);
+        let mut data = vec![0u8; actual_length];
+        connection.read_exact(&mut data).await.unwrap();
+        assert_eq!(data, vec![0x01]);
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_stays_pending_across_multiple_polls() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Fire several interrupt IN polls in quick succession. Because there is
+        // no data yet, none of them should be completed, so the client never
+        // gets flooded with empty completions.
+        for seqnum in 1..=5 {
+            let submit = UsbIpCommand::UsbIpCmdSubmit {
+                header: usbip_protocol::UsbIpHeaderBasic {
+                    command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                    seqnum,
+                    devid: 0,
+                    direction: 1, // IN
+                    ep: 1,        // 0x81 after | 0x80
+                },
+                transfer_flags: 0,
+                transfer_buffer_length: 8,
+                start_frame: 0,
+                number_of_packets: 0,
+                interval: 0,
+                setup: [0; 8],
+                data: vec![],
+                iso_packet_descriptor: vec![],
+            };
+            connection
+                .write_all(submit.to_bytes().as_slice())
+                .await
+                .unwrap();
+        }
+
+        // No data yet: none of the polls should have been answered.
+        {
+            let mut probe = [0u8; 48];
+            let timed_out = tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                connection.read_exact(&mut probe),
+            )
+            .await;
+            assert!(
+                timed_out.is_err(),
+                "no interrupt IN should complete while there is no data"
+            );
+        }
+
+        // Signal a single event: exactly ONE of the queued URBs should complete
+        // with the event (the rest stay pending for subsequent events).
+        {
+            let mut h = interrupt_handler.lock().unwrap();
+            h.as_any()
+                .downcast_mut::<TestInterruptHandler>()
+                .unwrap()
+                .push_event(vec![0x01]);
+        }
+
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let seqnum = u32::from_be_bytes(header_buf[4..8].try_into().unwrap());
+        assert!((1..=5).contains(&seqnum));
+        let actual_length = u32::from_be_bytes(header_buf[24..28].try_into().unwrap()) as usize;
+        assert_eq!(actual_length, 1);
+        let mut data = vec![0u8; actual_length];
+        connection.read_exact(&mut data).await.unwrap();
+        assert_eq!(data, vec![0x01]);
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_unlink_drops_deferred_response() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Submit an interrupt IN URB (seqnum 1); it is deferred.
+        let submit = UsbIpCommand::UsbIpCmdSubmit {
+            header: usbip_protocol::UsbIpHeaderBasic {
+                command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                seqnum: 1,
+                devid: 0,
+                direction: 1, // IN
+                ep: 1,        // 0x81 after | 0x80
+            },
+            transfer_flags: 0,
+            transfer_buffer_length: 8,
+            start_frame: 0,
+            number_of_packets: 0,
+            interval: 0,
+            setup: [0; 8],
+            data: vec![],
+            iso_packet_descriptor: vec![],
+        };
+        connection
+            .write_all(submit.to_bytes().as_slice())
+            .await
+            .unwrap();
+
+        // Unlink seqnum 1: the pending transfer must be cancelled.
+        let unlink = UsbIpCommand::UsbIpCmdUnlink {
+            header: usbip_protocol::UsbIpHeaderBasic {
+                command: usbip_protocol::USBIP_CMD_UNLINK.into(),
+                seqnum: 2,
+                devid: 0,
+                direction: 0,
+                ep: 0,
+            },
+            unlink_seqnum: 1,
+        };
+        connection
+            .write_all(unlink.to_bytes().as_slice())
+            .await
+            .unwrap();
+
+        // We only expect the USBIP_RET_UNLINK, not a USBIP_RET_SUBMIT.
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let command = u32::from_be_bytes(header_buf[0..4].try_into().unwrap());
+        assert_eq!(command, usbip_protocol::USBIP_RET_UNLINK.into());
+
+        // Even though data now becomes available, the cancelled URB must NOT be
+        // completed with a deferred response.
+        {
+            let mut h = interrupt_handler.lock().unwrap();
+            h.as_any()
+                .downcast_mut::<TestInterruptHandler>()
+                .unwrap()
+                .push_event(vec![0x01]);
+        }
+        let mut probe = [0u8; 48];
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            connection.read_exact(&mut probe),
+        )
+        .await;
+        assert!(
+            timed_out.is_err(),
+            "an unlinked URB must not be completed with a deferred response"
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_reused_seqnum_aborts_previous_task() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Submit the same seqnum (1) twice. The second occurrence should abort
+        // the deferred task from the first, so only one completion is possible.
+        for _ in 0..2 {
+            let submit = UsbIpCommand::UsbIpCmdSubmit {
+                header: usbip_protocol::UsbIpHeaderBasic {
+                    command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                    seqnum: 1,
+                    devid: 0,
+                    direction: 1, // IN
+                    ep: 1,        // 0x81 after | 0x80
+                },
+                transfer_flags: 0,
+                transfer_buffer_length: 8,
+                start_frame: 0,
+                number_of_packets: 0,
+                interval: 0,
+                setup: [0; 8],
+                data: vec![],
+                iso_packet_descriptor: vec![],
+            };
+            connection
+                .write_all(submit.to_bytes().as_slice())
+                .await
+                .unwrap();
+        }
+
+        // A single event should complete exactly one (the replacement) URB.
+        {
+            let mut h = interrupt_handler.lock().unwrap();
+            h.as_any()
+                .downcast_mut::<TestInterruptHandler>()
+                .unwrap()
+                .push_event(vec![0x01]);
+        }
+
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let seqnum = u32::from_be_bytes(header_buf[4..8].try_into().unwrap());
+        assert_eq!(seqnum, 1);
+        let actual_length = u32::from_be_bytes(header_buf[24..28].try_into().unwrap()) as usize;
+        let mut data = vec![0u8; actual_length];
+        connection.read_exact(&mut data).await.unwrap();
+        assert_eq!(data, vec![0x01]);
+
+        // The replaced task must not emit a second completion.
+        let mut probe = [0u8; 48];
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            connection.read_exact(&mut probe),
+        )
+        .await;
+        assert!(
+            timed_out.is_err(),
+            "a reused seqnum must not produce a second completion"
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupt_in_pending_cap_limits_concurrency() {
+        setup_test_logger();
+        let interrupt_handler = Arc::new(Mutex::new(
+            Box::new(TestInterruptHandler::new()) as Box<dyn UsbInterfaceHandler + Send>
+        ));
+        let device = UsbDevice::new(0).with_interface(
+            ClassCode::HID as u8,
+            0x00,
+            0x00,
+            Some("Test interrupt IN"),
+            vec![UsbEndpoint {
+                address: 0x81, // IN
+                attributes: EndpointAttributes::Interrupt as u8,
+                max_packet_size: 0x08,
+                interval: 10,
+            }],
+            interrupt_handler.clone(),
+        );
+        let server_ = Arc::new(UsbIpServer::new_simulated(vec![device]));
+
+        let addr = get_free_address().await;
+        tokio::spawn(server(addr, server_.clone()));
+
+        let mut connection = poll_connect(addr).await;
+        let result = attach_device(&mut connection, SINGLE_DEVICE_BUSID).await;
+        assert_eq!(result, 0);
+
+        // Submit more URBs than the cap. The first MAX_PENDING_DEFERRED are
+        // deferred; the overflow URB is completed immediately (empty buffer).
+        let total = (MAX_PENDING_DEFERRED + 1) as u32;
+        for seqnum in 1..=total {
+            let submit = UsbIpCommand::UsbIpCmdSubmit {
+                header: usbip_protocol::UsbIpHeaderBasic {
+                    command: usbip_protocol::USBIP_CMD_SUBMIT.into(),
+                    seqnum,
+                    devid: 0,
+                    direction: 1, // IN
+                    ep: 1,        // 0x81 after | 0x80
+                },
+                transfer_flags: 0,
+                transfer_buffer_length: 8,
+                start_frame: 0,
+                number_of_packets: 0,
+                interval: 0,
+                setup: [0; 8],
+                data: vec![],
+                iso_packet_descriptor: vec![],
+            };
+            connection
+                .write_all(submit.to_bytes().as_slice())
+                .await
+                .unwrap();
+        }
+
+        // Exactly one completion: the overflow URB, answered immediately.
+        let mut header_buf = [0u8; 48];
+        connection.read_exact(&mut header_buf).await.unwrap();
+        let seqnum = u32::from_be_bytes(header_buf[4..8].try_into().unwrap());
+        assert_eq!(seqnum, total);
+        let actual_length = u32::from_be_bytes(header_buf[24..28].try_into().unwrap()) as usize;
+        assert_eq!(actual_length, 0);
+
+        // The capped/deferred URBs still have no data, so no more responses.
+        let mut probe = [0u8; 48];
+        let timed_out = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            connection.read_exact(&mut probe),
+        )
+        .await;
+        assert!(
+            timed_out.is_err(),
+            "capped deferred URBs should remain pending"
+        );
     }
 }
