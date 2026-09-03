@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Build a minimal initramfs for the QEMU usbip end-to-end test.
+#
+# The initramfs bundles everything the guest needs to:
+#   1. boot (via the host kernel, /boot/vmlinuz-$(uname -r))
+#   2. load the vhci-hcd + cdc_acm kernel modules
+#   3. run the compiled usbip demo server (our library under test)
+#   4. run the usbip userspace client and attach the simulated devices
+#
+# Usage: build-initramfs.sh <output.cpio.gz>
+#
+# Overridable via env:
+#   KERNEL      kernel version whose modules/kernel to use (default: uname -r)
+#   BUSYBOX     path to a *static* busybox binary (default: `which busybox`)
+#   USBIP       path to the usbip userspace binary (default: auto-detect)
+#   DEMO_BIN    path to the compiled demo example (default: target/release/examples/demo)
+set -euo pipefail
+
+OUT="${1:?usage: build-initramfs.sh <output.cpio.gz>}"
+KERNEL="${KERNEL:-$(uname -r)}"
+BUSYBOX="${BUSYBOX:-$(command -v busybox)}"
+USBIP="${USBIP:-$(command -v usbip || echo /usr/sbin/usbip)}"
+DEMO_BIN="${DEMO_BIN:-target/release/examples/demo}"
+
+[ -e "$BUSYBOX" ] || { echo "ERROR: busybox not found at $BUSYBOX"; exit 1; }
+[ -e "$USBIP" ] || { echo "ERROR: usbip not found at $USBIP"; exit 1; }
+[ -e "$DEMO_BIN" ] || { echo "ERROR: demo binary not found at $DEMO_BIN"; exit 1; }
+
+ROOT=$(mktemp -d)
+trap 'rm -rf "$ROOT"' EXIT
+
+echo "kernel=$KERNEL busybox=$BUSYBOX usbip=$USBIP demo=$DEMO_BIN"
+
+# --- binaries ---
+mkdir -p "$ROOT/bin" "$ROOT/sbin" "$ROOT/usr/sbin" "$ROOT/usr/share/misc"
+cp "$BUSYBOX" "$ROOT/bin/busybox"
+
+# busybox applet symlinks (see init.sh for the applets we use)
+for a in sh insmod modprobe ls cat dmesg grep sleep dd hexdump od mount mknod \
+         poweroff reboot echo printf test head tail cp rm more seq timeout mkdir \
+         sync umount true false mdev find ifconfig stty; do
+    ln -sf busybox "$ROOT/bin/$a"
+done
+ln -sf busybox "$ROOT/sbin/modprobe"
+ln -sf busybox "$ROOT/sbin/insmod"
+ln -sf busybox "$ROOT/sbin/mdev"
+
+cp "$USBIP" "$ROOT/usr/sbin/usbip"
+cp "$DEMO_BIN" "$ROOT/demo_server"
+
+# --- kernel modules (preserve layout so the guest can `find` them) ---
+for mod in usbip-core vhci-hcd cdc-acm; do
+    ko=$(find "/lib/modules/$KERNEL" -name "$mod.ko" 2>/dev/null | head -1)
+    if [ -z "$ko" ]; then
+        echo "ERROR: kernel module $mod.ko not found for kernel $KERNEL"
+        exit 1
+    fi
+    mkdir -p "$ROOT$(dirname "$ko")"
+    cp "$ko" "$ROOT$ko"
+done
+
+# --- usb.ids database required by the usbip tool ---
+UI="$(find /usr/share -name usb.ids 2>/dev/null | head -1)"
+[ -n "$UI" ] && cp "$UI" "$ROOT/usr/share/misc/usb.ids" || echo "WARN: usb.ids not found"
+
+# --- libraries needed by usbip + demo server (copy preserving absolute path) ---
+copy_libs() {
+    local bin="$1"
+    ldd "$bin" 2>/dev/null \
+        | grep -oE '/[^ ]+\.so[^ ]*' \
+        | sort -u \
+        | while read -r lib; do
+            [ -e "$lib" ] || continue
+            mkdir -p "$ROOT$(dirname "$lib")"
+            cp -L "$lib" "$ROOT$lib"
+        done
+}
+copy_libs "$USBIP"
+copy_libs "$DEMO_BIN"
+
+# --- device dirs (devtmpfs populates /dev at runtime) ---
+mkdir -p "$ROOT/dev" "$ROOT/proc" "$ROOT/sys" "$ROOT/tmp"
+mknod -m 666 "$ROOT/dev/console" c 5 1 2>/dev/null || true
+
+# --- init script ---
+cp "$(dirname "$0")/init.sh" "$ROOT/init"
+chmod +x "$ROOT/init"
+
+# --- cpio archive ---
+( cd "$ROOT" && find . -print0 | cpio --null -ov --format=newc 2>/dev/null | gzip -9 > "$OUT" )
+echo "wrote $OUT"

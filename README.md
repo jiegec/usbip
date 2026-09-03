@@ -31,11 +31,12 @@ cargo build --release
 
 ### Examples
 
-The `examples/` directory contains three example programs:
+The `examples/` directory contains four example programs:
 
 1. **hid_keyboard**: Simulate a HID keyboard that types something every second
 2. **cdc_acm_serial**: Simulate a CDC ACM serial device that receives a character every second
 3. **host**: Act as a USB/IP server, sharing physical devices from the host machine to remote clients
+4. **demo**: Simulate a HID keyboard *and* a CDC ACM serial device together (used by the QEMU test)
 
 #### Running an example
 
@@ -54,6 +55,25 @@ usbip list -r $remote_ip
 # Attach to a device
 usbip attach -r $remote_ip -b $bus_id
 ```
+
+### QEMU end-to-end test
+
+The simulated devices can be verified against a real Linux kernel booted under
+QEMU. The test assembles a minimal initramfs from the running kernel, its USB/IP
+and cdc_acm modules, a static busybox and the `usbip` userspace client, then
+boots it and uses `vhci-hcd` to attach the simulated keyboard and serial device.
+Inside the guest it confirms the serial port emits `'a'` and that the keyboard
+generates a `KEY_1` input event.
+
+Run it locally (requires `qemu-system-x86`, a static `busybox`, `cpio`, and the
+`usbip` tool):
+
+```bash
+./scripts/qemu/run-qemu-test.sh --build --dump-log
+```
+
+It runs under KVM when available and falls back to QEMU TCG otherwise. It is
+also wired into CI via `.github/workflows/qemu.yml`.
 
 ## License
 

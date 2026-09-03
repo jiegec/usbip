@@ -1,0 +1,54 @@
+name: QEMU usbip integration test
+
+# Boot a real Linux inside QEMU and verify that the *simulated* USB devices
+# exported by this crate actually work (a CDC ACM serial port and a HID keyboard).
+on: [push, pull_request]
+
+jobs:
+  qemu-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system packages
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 busybox-static cpio usb.ids
+
+          # The usbip userspace tool ships in the distro 'usbip' package (universe),
+          # or in linux-tools. Try both and make sure a binary is available.
+          if ! sudo apt-get install -y usbip; then
+            sudo apt-get install -y linux-tools-common linux-tools-generic
+          fi
+
+          echo "--- installed binaries ---"
+          ls -l /usr/bin/busybox /usr/bin/qemu-system-x86_64 2>/dev/null || true
+          ls -l /usr/sbin/usbip /usr/bin/usbip 2>/dev/null || true
+
+      - name: Preflight checks
+        run: |
+          set -euo pipefail
+          echo "kernel: $(uname -r)"
+          ls -l /boot/vmlinuz-$(uname -r)
+          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/usbip/ 2>/dev/null || true
+          ls -l /lib/modules/$(uname -r)/kernel/drivers/usb/class/cdc-acm.ko 2>/dev/null || true
+          command -v usbip >/dev/null 2>&1 || test -x /usr/sbin/usbip
+          test -e /dev/kvm && echo "KVM: available" || echo "KVM: not available (will use TCG)"
+
+      - name: Run QEMU end-to-end test
+        run: |
+          ./scripts/qemu/run-qemu-test.sh --build --dump-log
+
+      - name: Upload serial console log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-serial-log
+          path: .qemu-serial.log
+          if-no-files-found: ignore
