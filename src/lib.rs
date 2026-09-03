@@ -394,28 +394,14 @@ impl UsbIpServer {
 /// task growth (potential DoS).
 const MAX_PENDING_DEFERRED: usize = 64;
 
-/// Send a deferred (pending) completion response and drop it from the pending map.
-async fn send_deferred_response<W: AsyncWriteExt + Unpin>(
-    res: UsbIpResponse,
-    writer: &mut W,
-    pending: &mut HashMap<u32, tokio::task::JoinHandle<()>>,
-) -> Result<()> {
-    if let UsbIpResponse::UsbIpRetSubmit { header, .. } = &res {
-        // Only send a completion if this seqnum is still pending. If a
-        // USBIP_CMD_UNLINK already removed it, the client cancelled this URB
-        // and we must not complete it (otherwise we would respond to a URB the
-        // client explicitly unlinked).
-        if pending.remove(&header.seqnum).is_none() {
-            trace!(
-                "Dropped deferred USB/IP response for unlinked seqnum {}",
-                header.seqnum
-            );
-            return Ok(());
-        }
-    }
-    res.write_to_socket(writer).await?;
-    trace!("Sent deferred USB/IP response");
-    Ok(())
+/// A response queued to the background writer. Deferred completions may be
+/// dropped if the URB was cancelled by `USBIP_CMD_UNLINK`.
+enum Outbound {
+    /// A response that must always be written (e.g. devlist, import, unlink,
+    /// and immediate submissions).
+    Immediate(UsbIpResponse),
+    /// A deferred interrupt IN completion; written only if still pending.
+    Deferred(UsbIpResponse),
 }
 
 async fn handle_submit(
@@ -480,33 +466,52 @@ async fn handle_submit(
     }
 }
 
-pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
-    socket: &mut T,
+fn conn_closed() -> std::io::Error {
+    std::io::Error::other("connection closed")
+}
+
+pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin + Send + 'static>(
+    socket: T,
     server: Arc<UsbIpServer>,
 ) -> Result<()> {
     let (mut reader, mut writer) = tokio::io::split(socket);
-    let (delayed_tx, mut delayed_rx) = tokio::sync::mpsc::channel::<UsbIpResponse>(64);
-    // Deferred (pending) interrupt IN transfers keyed by seqnum. The completion
-    // is sent later, once the device handler produces data (issue #63).
-    let mut pending: HashMap<u32, tokio::task::JoinHandle<()>> = HashMap::new();
+    let (delayed_tx, mut delayed_rx) = tokio::sync::mpsc::channel::<Outbound>(64);
+    // Deferred (pending) interrupt IN transfers keyed by seqnum, shared with the
+    // writer task so a completion can be dropped if its URB was unlinked.
+    let pending: Arc<Mutex<HashMap<u32, tokio::task::JoinHandle<()>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let mut current_import_device_id: Option<String> = None;
-    loop {
-        // Send any deferred responses that are already ready before waiting for
-        // the next command. This keeps the reader from being cancelled
-        // mid-command when a deferred response arrives.
-        while let Ok(res) = delayed_rx.try_recv() {
-            send_deferred_response(res, &mut writer, &mut pending).await?;
-        }
 
-        let command = tokio::select! {
-            command = UsbIpCommand::read_from_socket(&mut reader) => command,
-            delayed_response = delayed_rx.recv() => {
-                if let Some(res) = delayed_response {
-                    send_deferred_response(res, &mut writer, &mut pending).await?;
+    // A background writer task. Every response (immediate and deferred) is sent
+    // through the channel, so the protocol read below is never cancelled
+    // mid-command (cancel-safety, issue #63).
+    let writer_pending = pending.clone();
+    let writer_task = tokio::spawn(async move {
+        while let Some(msg) = delayed_rx.recv().await {
+            // A deferred completion must be dropped if its URB was already
+            // cancelled by USBIP_CMD_UNLINK.
+            let should_write = match &msg {
+                Outbound::Deferred(UsbIpResponse::UsbIpRetSubmit { header, .. }) => writer_pending
+                    .lock()
+                    .unwrap()
+                    .remove(&header.seqnum)
+                    .is_some(),
+                Outbound::Deferred(_) | Outbound::Immediate(_) => true,
+            };
+            if should_write {
+                let res = match msg {
+                    Outbound::Immediate(res) => res,
+                    Outbound::Deferred(res) => res,
+                };
+                if res.write_to_socket(&mut writer).await.is_err() {
+                    break;
                 }
-                continue;
             }
-        };
+        }
+    });
+
+    let result: Result<()> = 'connection: loop {
+        let command = UsbIpCommand::read_from_socket(&mut reader).await;
         if let Err(err) = command {
             if let Some(dev_id) = current_import_device_id {
                 let mut used_devices = server.used_devices.write().await;
@@ -516,16 +521,11 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     None => unreachable!(),
                 }
             }
-
-            // Cancel any deferred transfers that are still pending.
-            for (_, task) in pending.drain() {
-                task.abort();
-            }
             if err.kind() == ErrorKind::UnexpectedEof {
                 info!("Remote closed the connection");
-                return Ok(());
+                break 'connection Ok(());
             } else {
-                return Err(err);
+                break 'connection Err(err);
             }
         }
 
@@ -538,11 +538,10 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
             UsbIpCommand::OpReqDevlist { .. } => {
                 trace!("Got OP_REQ_DEVLIST");
                 let devices = server.available_devices.read().await;
-
-                // OP_REP_DEVLIST
-                UsbIpResponse::op_rep_devlist(&devices)
-                    .write_to_socket(&mut writer)
-                    .await?;
+                let res = Outbound::Immediate(UsbIpResponse::op_rep_devlist(&devices));
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent OP_REP_DEVLIST");
             }
             UsbIpCommand::OpReqImport { busid, .. } => {
@@ -568,11 +567,13 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 }
 
                 let res = if let Some(dev) = current_import_device {
-                    UsbIpResponse::op_rep_import_success(dev)
+                    Outbound::Immediate(UsbIpResponse::op_rep_import_success(dev))
                 } else {
-                    UsbIpResponse::op_rep_import_fail()
+                    Outbound::Immediate(UsbIpResponse::op_rep_import_fail())
                 };
-                res.write_to_socket(&mut writer).await?;
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent OP_REP_IMPORT");
             }
             UsbIpCommand::UsbIpCmdSubmit {
@@ -615,11 +616,11 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     // misbehaving client cannot drive unbounded task growth
                     // (potential DoS). When the cap is reached, fall through and
                     // complete the URB immediately instead of deferring.
-                    if pending.len() < MAX_PENDING_DEFERRED {
+                    if pending.lock().unwrap().len() < MAX_PENDING_DEFERRED {
                         // Defer: spawn a task that waits for the handler to
                         // signal data. The response is queued to the writer
-                        // (via the response channel) only once there is
-                        // actually data to send.
+                        // (via the response channel) only once there is actually
+                        // data to send.
                         let device = device.clone();
                         let header2 = header.clone();
                         let tx = delayed_tx.clone();
@@ -649,7 +650,7 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                                     _ => true,
                                 };
                                 if should_send {
-                                    let _ = tx.send(res).await;
+                                    let _ = tx.send(Outbound::Deferred(res)).await;
                                     break;
                                 }
                                 notify.notified().await;
@@ -658,10 +659,11 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                         // If the client reuses a seqnum, abort the replaced task
                         // so it cannot later emit a response that no longer
                         // matches the pending map.
-                        if let Some(old) = pending.remove(&header.seqnum) {
+                        let mut p = pending.lock().unwrap();
+                        if let Some(old) = p.remove(&header.seqnum) {
                             old.abort();
                         }
-                        pending.insert(header.seqnum, task);
+                        p.insert(header.seqnum, task);
                         trace!("Deferred USBIP_CMD_SUBMIT (seqnum {})", header.seqnum);
                         continue;
                     }
@@ -677,7 +679,9 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                     &data,
                 )
                 .await;
-                res.write_to_socket(&mut writer).await?;
+                if delayed_tx.send(Outbound::Immediate(res)).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent USBIP_RET_SUBMIT");
             }
             UsbIpCommand::UsbIpCmdUnlink {
@@ -689,16 +693,27 @@ pub async fn handler<T: AsyncReadExt + AsyncWriteExt + Unpin>(
                 header.command = USBIP_RET_UNLINK.into();
 
                 // Cancel a still-pending deferred transfer, if any.
-                if let Some(task) = pending.remove(&unlink_seqnum) {
+                if let Some(task) = pending.lock().unwrap().remove(&unlink_seqnum) {
                     task.abort();
                 }
 
-                let res = UsbIpResponse::usbip_ret_unlink_success(&header);
-                res.write_to_socket(&mut writer).await?;
+                let res = Outbound::Immediate(UsbIpResponse::usbip_ret_unlink_success(&header));
+                if delayed_tx.send(res).await.is_err() {
+                    break 'connection Err(conn_closed());
+                }
                 trace!("Sent USBIP_RET_UNLINK");
             }
         }
+    };
+
+    // Cleanup: abort pending deferred transfers, close the channel so the writer
+    // task drains and exits, then wait for it.
+    for (_, task) in pending.lock().unwrap().drain() {
+        task.abort();
     }
+    drop(delayed_tx);
+    let _ = writer_task.await;
+    result
 }
 
 /// Spawn a USB/IP server at `addr` using [TcpListener]
@@ -708,11 +723,11 @@ pub async fn server(addr: SocketAddr, server: Arc<UsbIpServer>) {
     let server = async move {
         loop {
             match listener.accept().await {
-                Ok((mut socket, _addr)) => {
+                Ok((socket, _addr)) => {
                     info!("Got connection from {:?}", socket.peer_addr());
                     let new_server = server.clone();
                     tokio::spawn(async move {
-                        let res = handler(&mut socket, new_server).await;
+                        let res = handler(socket, new_server).await;
                         info!("Handler ended with {res:?}");
                     });
                 }
@@ -829,11 +844,12 @@ mod tests {
         let server = UsbIpServer::new_simulated(vec![]);
         let req = UsbIpCommand::OpReqDevlist { status: 0 };
 
-        let mut mock_socket = MockSocket::new(req.to_bytes());
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req.to_bytes(), output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
 
         assert_eq!(
-            mock_socket.output,
+            *output.lock().unwrap(),
             UsbIpResponse::op_rep_devlist(&[]).to_bytes(),
         );
     }
@@ -844,14 +860,15 @@ mod tests {
         let server = new_server_with_single_device();
         let req = UsbIpCommand::OpReqDevlist { status: 0 };
 
-        let mut mock_socket = MockSocket::new(req.to_bytes());
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req.to_bytes(), output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
 
         // OP_REP_DEVLIST
         // header: 0xC
         // device: 0x138
         // interface: 4 * 0x1
-        assert_eq!(mock_socket.output.len(), 0xC + 0x138 + 4);
+        assert_eq!(output.lock().unwrap().len(), 0xC + 0x138 + 4);
     }
 
     #[tokio::test]
@@ -861,10 +878,11 @@ mod tests {
 
         // OP_REQ_IMPORT
         let req = op_req_import(SINGLE_DEVICE_BUSID);
-        let mut mock_socket = MockSocket::new(req);
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req, output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
         // OP_REQ_IMPORT
-        assert_eq!(mock_socket.output.len(), 0x140);
+        assert_eq!(output.lock().unwrap().len(), 0x140);
     }
 
     #[tokio::test]
@@ -1036,10 +1054,11 @@ mod tests {
             .to_bytes(),
         );
 
-        let mut mock_socket = MockSocket::new(req);
-        handler(&mut mock_socket, Arc::new(server)).await.ok();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let mock_socket = MockSocket::new_with_output(req, output.clone());
+        handler(mock_socket, Arc::new(server)).await.ok();
         // OP_REQ_IMPORT + USBIP_CMD_SUBMIT + Device Descriptor
-        assert_eq!(mock_socket.output.len(), 0x140 + 0x30 + 0x12);
+        assert_eq!(output.lock().unwrap().len(), 0x140 + 0x30 + 0x12);
     }
 
     #[tokio::test]
