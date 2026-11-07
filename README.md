@@ -82,6 +82,20 @@ has `CONFIG_USB_HID` disabled, so it cannot enumerate a simulated USB keyboard;
 the generic kernel ships the `hid`/`hid-generic`/`usbhid` modules which are loaded
 in the guest so both the serial device and the keyboard are verified.
 
+### QEMU host-passthrough test
+
+The `host` example is tested the same way, with two other emulated devices: a
+SuperSpeed one (`usb-uas` on an emulated xHCI controller) and a high-speed one
+(`usb-storage` on an emulated EHCI controller). Inside the guest the example
+exports them over USB/IP -- first with the nusb backend, then with libusb/rusb --
+and the guest attaches them back through `vhci-hcd`. The test checks that the
+virtual copy enumerates at the same speed, with the same `bMaxPacketSize0` (the
+exponent 9, i.e. 512 bytes, at SuperSpeed) and the same `bcdUSB` as the real device:
+
+```bash
+./scripts/qemu/run-qemu-passthrough-test.sh --build --dump-log
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

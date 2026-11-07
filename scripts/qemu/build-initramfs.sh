@@ -14,6 +14,7 @@
 #   BUSYBOX     path to a *static* busybox binary (default: `which busybox`)
 #   USBIP       path to the usbip userspace binary (default: auto-detect)
 #   DEMO_BIN    path to the compiled demo example (default: target/release/examples/demo)
+#   INIT_SCRIPT init script to use as /init (default: init.sh next to this script)
 set -euo pipefail
 trap 'echo "ERROR: build-initramfs.sh failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
@@ -37,11 +38,13 @@ KERNEL="${KERNEL:-$(uname -r)}"
 BUSYBOX="${BUSYBOX:-$(command -v busybox)}"
 USBIP="${USBIP:-$(find_usbip_bin)}"
 DEMO_BIN="${DEMO_BIN:-target/release/examples/demo}"
+INIT_SCRIPT="${INIT_SCRIPT:-$(dirname "$0")/init.sh}"
 MODTREE="${MODTREE:-/lib/modules/$KERNEL}"
 
 [ -e "$BUSYBOX" ] || { echo "ERROR: busybox not found at $BUSYBOX"; exit 1; }
 [ -e "$USBIP" ] || { echo "ERROR: usbip not found at $USBIP"; exit 1; }
 [ -e "$DEMO_BIN" ] || { echo "ERROR: demo binary not found at $DEMO_BIN"; exit 1; }
+[ -e "$INIT_SCRIPT" ] || { echo "ERROR: init script not found at $INIT_SCRIPT"; exit 1; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
@@ -55,7 +58,7 @@ cp "$BUSYBOX" "$ROOT/bin/busybox"
 # busybox applet symlinks (see init.sh for the applets we use)
 for a in sh insmod modprobe ls cat dmesg grep sleep dd hexdump od mount mknod \
          poweroff reboot echo printf test head tail cp rm more seq timeout mkdir \
-         sync umount true false mdev find ifconfig stty; do
+         sync umount true false mdev find ifconfig stty sed wc readlink kill; do
     ln -sf busybox "$ROOT/bin/$a"
 done
 ln -sf busybox "$ROOT/sbin/modprobe"
@@ -134,7 +137,7 @@ mkdir -p "$ROOT/dev" "$ROOT/proc" "$ROOT/sys" "$ROOT/tmp"
 mknod -m 666 "$ROOT/dev/console" c 5 1 2>/dev/null || true
 
 # --- init script ---
-cp "$(dirname "$0")/init.sh" "$ROOT/init"
+cp "$INIT_SCRIPT" "$ROOT/init"
 chmod +x "$ROOT/init"
 
 # --- cpio archive ---

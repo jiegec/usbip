@@ -1,3 +1,4 @@
 /target
 Cargo.lock
 /.qemu-serial.log
+/.qemu-passthrough.log

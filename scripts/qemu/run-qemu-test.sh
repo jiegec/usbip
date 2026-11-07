@@ -6,8 +6,14 @@
 # the simulated serial port and keyboard actually work inside a real Linux.
 #
 # Usage: run-qemu-test.sh [--build] [--dump-log]
-#   --build      build the demo example first (default: assume prebuilt)
+#   --build      build the example first (default: assume prebuilt)
 #   --dump-log   print the full serial console log on stdout (for debugging)
+#
+# Overridable via env:
+#   EXAMPLE         cargo example to build/boot (default: demo)
+#   INIT_SCRIPT     init script used as /init (see build-initramfs.sh)
+#   QEMU_EXTRA_ARGS extra qemu arguments, e.g. to add emulated USB devices
+#   LOG_FILE        serial console log path (default: .qemu-serial.log)
 #
 # Exit: 0 if the test passed, non-zero otherwise.
 set -uo pipefail
@@ -25,13 +31,20 @@ for arg in "$@"; do
     esac
 done
 
+EXAMPLE="${EXAMPLE:-demo}"
+
 if [ "$BUILD" = "1" ]; then
-    echo "=== building demo example ==="
-    cargo build --example demo --release --all-features || exit 1
+    echo "=== building $EXAMPLE example ==="
+    cargo build --example "$EXAMPLE" --release --all-features || exit 1
 fi
 
-DEMO_BIN="$REPO_ROOT/target/release/examples/demo"
+DEMO_BIN="$REPO_ROOT/target/release/examples/$EXAMPLE"
 [ -e "$DEMO_BIN" ] || { echo "ERROR: $DEMO_BIN not found; run with --build"; exit 1; }
+
+QEMU_EXTRA=()
+if [ -n "${QEMU_EXTRA_ARGS:-}" ]; then
+    read -r -a QEMU_EXTRA <<< "$QEMU_EXTRA_ARGS"
+fi
 
 KERNEL="${KERNEL:-$(uname -r)}"
 VMLINUZ="${VMLINUZ:-/boot/vmlinuz-$KERNEL}"
@@ -41,11 +54,11 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 # Persist the serial console log for CI artefact upload / debugging.
-SERIAL_LOG="${REPO_ROOT}/.qemu-serial.log"
+SERIAL_LOG="${LOG_FILE:-$REPO_ROOT/.qemu-serial.log}"
 rm -f "$SERIAL_LOG"
 
 echo "=== building initramfs ==="
-DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" MODTREE="${MODTREE:-/lib/modules/$KERNEL}" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/initramfs.cpio.gz" || exit 1
+DEMO_BIN="$DEMO_BIN" KERNEL="$KERNEL" MODTREE="${MODTREE:-/lib/modules/$KERNEL}" INIT_SCRIPT="${INIT_SCRIPT:-}" "$SCRIPT_DIR/build-initramfs.sh" "$WORK/initramfs.cpio.gz" || exit 1
 
 # /boot/vmlinuz-* is usually root-only; copy to a readable temp path for QEMU.
 VMLINUZ_SAFE="$WORK/vmlinuz"
@@ -85,7 +98,8 @@ QEMU_CMD=("${QEMU_SUDO[@]}" qemu-system-x86_64 -m 512 -smp 2 "${QEMU_ACCEL[@]}" 
     -display none \
     -serial "file:$SERIAL_LOG" \
     -monitor none \
-    -no-reboot
+    -no-reboot \
+    ${QEMU_EXTRA[@]+"${QEMU_EXTRA[@]}"}
 )
 
 echo "=== launching QEMU ==="
@@ -101,6 +115,7 @@ if [[ " ${QEMU_CMD[*]} " == *" -enable-kvm "* ]]; then
             -initrd "$WORK/initramfs.cpio.gz" \
             -append "console=ttyS0 panic=-1" \
             -display none -serial "file:$SERIAL_LOG" -monitor none -no-reboot \
+            ${QEMU_EXTRA[@]+"${QEMU_EXTRA[@]}"} \
             2>"$WORK/qemu.err" || true
     fi
 else
@@ -122,8 +137,9 @@ fi
 
 if grep -q "TEST_RESULT: PASS" "$SERIAL_LOG"; then
     echo "SUCCESS: QEMU usbip test passed"
-    echo "VERIFY_SERIAL=$(grep -c 'SERIAL_TEST: PASS' "$SERIAL_LOG")"
-    echo "VERIFY_KEYBOARD=$(grep -c 'KEYBOARD_TEST: PASS' "$SERIAL_LOG")"
+    [ "$EXAMPLE" = "demo" ] && echo "VERIFY_SERIAL=$(grep -c 'SERIAL_TEST: PASS' "$SERIAL_LOG")"
+    [ "$EXAMPLE" = "demo" ] && echo "VERIFY_KEYBOARD=$(grep -c 'KEYBOARD_TEST: PASS' "$SERIAL_LOG")"
+    echo "VERIFY_CHECKS=$(grep -c ': PASS' "$SERIAL_LOG")"
     exit 0
 else
     echo "FAILURE: TEST_RESULT: PASS not found in serial log"

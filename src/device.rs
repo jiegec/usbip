@@ -44,6 +44,8 @@ pub struct UsbDevice {
     pub bus_id: String,
     pub bus_num: u32,
     pub dev_num: u32,
+    /// One of [`UsbSpeed`]'s values; prefer [`UsbDevice::set_speed`], which also
+    /// updates the ep0 max packet size
     pub speed: u32,
     pub vendor_id: u16,
     pub product_id: u16,
@@ -204,6 +206,37 @@ impl UsbDevice {
     ) -> Self {
         self.device_handler = Some(handler);
         self
+    }
+
+    /// Set the USB speed, keeping the ep0 max packet size in sync.
+    ///
+    /// Prefer this over assigning [`UsbDevice::speed`] directly: `bMaxPacketSize0`
+    /// depends on the speed (8 at low speed, 64 at full/high speed, and the
+    /// exponent 9 - meaning 512 bytes - at SuperSpeed and above, USB 3.2 §9.6.1),
+    /// and a mismatch makes the device fail to enumerate on the client.
+    pub fn set_speed(&mut self, speed: UsbSpeed) {
+        self.speed = speed as u32;
+        let max_packet_size_0 = match speed {
+            UsbSpeed::Low => 8,
+            UsbSpeed::Full | UsbSpeed::High => 64,
+            // exponent, not a size: 2^9 == 512 bytes
+            UsbSpeed::Super | UsbSpeed::SuperPlus => 9,
+            UsbSpeed::Unknown | UsbSpeed::Wireless => EP0_MAX_PACKET_SIZE,
+        };
+        self.ep0_in.max_packet_size = max_packet_size_0;
+        self.ep0_out.max_packet_size = max_packet_size_0;
+    }
+
+    /// `bMaxPacketSize0` of the device qualifier descriptor, which describes the
+    /// device operating at high speed. At SuperSpeed and above the device
+    /// descriptor carries the exponent 9 instead, which is not a size and must not
+    /// be reported here (USB 2.0 §5.5.3 requires 64 at high speed).
+    fn qualifier_max_packet_size_0(&self) -> u8 {
+        if self.speed >= UsbSpeed::Super as u32 {
+            64
+        } else {
+            self.ep0_in.max_packet_size as u8
+        }
     }
 
     pub(crate) fn new_string(&mut self, s: &str) -> u8 {
@@ -453,7 +486,7 @@ impl UsbDevice {
                                     self.device_class,      // bDeviceClass
                                     self.device_subclass,   // bDeviceSUbClass
                                     self.device_protocol,   // bDeviceProtocol
-                                    self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
+                                    self.qualifier_max_packet_size_0(), // bMaxPacketSize0
                                     self.num_configurations, // bNumConfigurations
                                     0x00,                   // bReserved
                                 ];
@@ -655,5 +688,73 @@ mod test {
                 "{speed:?} bMaxPacketSize0"
             );
         }
+    }
+
+    /// set_speed keeps the speed and ep0 in sync, including the exponent used at
+    /// SuperSpeed.
+    #[tokio::test]
+    async fn test_set_speed_updates_ep0() {
+        setup_test_logger();
+        for (speed, expected_max_packet_size_0) in [
+            (UsbSpeed::Low, 8),
+            (UsbSpeed::Full, 64),
+            (UsbSpeed::High, 64),
+            (UsbSpeed::Super, 9),
+            (UsbSpeed::SuperPlus, 9),
+        ] {
+            let mut device = UsbDevice::new(0);
+            device.set_speed(speed);
+
+            assert_eq!(device.speed, speed as u32);
+            assert_eq!(device.ep0_in.max_packet_size, expected_max_packet_size_0);
+            assert_eq!(device.ep0_out.max_packet_size, expected_max_packet_size_0);
+
+            let desc = device
+                .handle_urb(
+                    device.ep0_in,
+                    None,
+                    u32::from(u16::MAX),
+                    SetupPacket {
+                        request_type: 0b10000000,
+                        request: StandardRequest::GetDescriptor as u8,
+                        value: (DescriptorType::Device as u16) << 8,
+                        index: 0,
+                        length: u16::MAX,
+                    },
+                    &[],
+                )
+                .await
+                .unwrap();
+            assert_eq!(u16::from(desc[7]), expected_max_packet_size_0, "{speed:?}");
+        }
+    }
+
+    /// At SuperSpeed the device descriptor holds the exponent 9, but the (USB 2.0)
+    /// device qualifier describes high-speed operation and must report 64 bytes.
+    #[tokio::test]
+    async fn test_device_qualifier_at_superspeed() {
+        setup_test_logger();
+        let mut device = UsbDevice::new(0);
+        device.set_speed(UsbSpeed::Super);
+
+        let desc = device
+            .handle_urb(
+                device.ep0_in,
+                None,
+                u32::from(u16::MAX),
+                SetupPacket {
+                    request_type: 0b10000000,
+                    request: StandardRequest::GetDescriptor as u8,
+                    value: (DescriptorType::DeviceQualifier as u16) << 8,
+                    index: 0,
+                    length: u16::MAX,
+                },
+                &[],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(desc[1], DescriptorType::DeviceQualifier as u8);
+        assert_eq!(desc[7], 64);
     }
 }

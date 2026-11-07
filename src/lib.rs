@@ -122,7 +122,10 @@ impl UsbIpServer {
 
             // bMaxPacketSize0 has to come from the device descriptor: for SuperSpeed
             // and above it is an exponent (9 => 512 bytes), and at high speed it is
-            // 64 rather than the 16 that was hardcoded here before.
+            // 64 rather than the 16 that was hardcoded here before. bcdUSB is taken
+            // from there as well: the client rejects a device that claims
+            // SuperSpeed without `bcdUSB >= 0x0300`, so leaving it at 0 broke
+            // enumeration of every USB 3 device.
             let device_desc = dev.device_descriptor();
 
             let mut device = UsbDevice {
@@ -140,6 +143,7 @@ impl UsbIpServer {
                 device_subclass: device_info.subclass(),
                 device_protocol: device_info.protocol(),
                 device_bcd: device_info.device_version().into(),
+                usb_version: device_desc.usb_version().into(),
                 configuration_value: cfg.configuration_value(),
                 num_configurations: dev.configurations().count() as u8,
                 ep0_in: UsbEndpoint {

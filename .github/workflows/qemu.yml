@@ -1,7 +1,12 @@
 name: QEMU usbip integration test
 
-# Boot a real Linux inside QEMU and verify that the *simulated* USB devices
-# exported by this crate actually work (a CDC ACM serial port and a HID keyboard).
+# Boot a real Linux inside QEMU and verify that
+#   * the *simulated* USB devices exported by this crate actually work (a CDC ACM
+#     serial port and a HID keyboard), and
+#   * *host passthrough* works end to end: QEMU provides a SuperSpeed and a
+#     high-speed device, the guest exports them with the nusb and rusb backends,
+#     and they are attached back through vhci-hcd at the correct speed and with the
+#     correct ep0 max packet size (issue #66).
 #
 # The runner uses an Azure kernel whose config has CONFIG_USB_HID disabled, so it
 # cannot enumerate the simulated keyboard over USB/IP. Instead we install and boot
@@ -63,10 +68,16 @@ jobs:
         run: |
           ./scripts/qemu/run-qemu-test.sh --build --dump-log
 
-      - name: Upload serial console log
+      - name: Run QEMU host-passthrough test
+        run: |
+          ./scripts/qemu/run-qemu-passthrough-test.sh --build --dump-log
+
+      - name: Upload serial console logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qemu-serial-log
-          path: .qemu-serial.log
+          path: |
+            .qemu-serial.log
+            .qemu-passthrough.log
           if-no-files-found: ignore
