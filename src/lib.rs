@@ -120,12 +120,20 @@ impl UsbIpServer {
 
             let device_address = device_info.device_address();
 
+            // bMaxPacketSize0 has to come from the device descriptor: for SuperSpeed
+            // and above it is an exponent (9 => 512 bytes), and at high speed it is
+            // 64 rather than the 16 that was hardcoded here before.
+            let device_desc = dev.device_descriptor();
+
             let mut device = UsbDevice {
                 path: format!("/sys/bus/{}/{}/{}", bus_num_val, device_address, 0),
                 bus_id: format!("{}-{}-{}", bus_num_val, device_address, 0),
                 bus_num: bus_num_val,
                 dev_num: 0,
-                speed: device_info.speed().unwrap() as u32,
+                speed: device_info
+                    .speed()
+                    .map(UsbSpeed::from)
+                    .unwrap_or(UsbSpeed::Unknown) as u32,
                 vendor_id: device_info.vendor_id(),
                 product_id: device_info.product_id(),
                 device_class: device_info.class(),
@@ -137,13 +145,13 @@ impl UsbIpServer {
                 ep0_in: UsbEndpoint {
                     address: 0x80,
                     attributes: EndpointAttributes::Control as u8,
-                    max_packet_size: 16,
+                    max_packet_size: device_desc.max_packet_size_0() as u16,
                     interval: 0,
                 },
                 ep0_out: UsbEndpoint {
                     address: 0x00,
                     attributes: EndpointAttributes::Control as u8,
-                    max_packet_size: 16,
+                    max_packet_size: device_desc.max_packet_size_0() as u16,
                     interval: 0,
                 },
                 interfaces,
@@ -249,7 +257,7 @@ impl UsbIpServer {
                 ),
                 bus_num: dev.bus_number() as u32,
                 dev_num: dev.port_number() as u32,
-                speed: dev.speed() as u32,
+                speed: UsbSpeed::from(dev.speed()) as u32,
                 vendor_id: desc.vendor_id(),
                 product_id: desc.product_id(),
                 device_class: desc.class_code(),

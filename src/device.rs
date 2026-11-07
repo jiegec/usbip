@@ -60,6 +60,8 @@ pub struct UsbDevice {
 
     pub usb_version: Version,
 
+    // ep0 endpoints; `max_packet_size` holds `bMaxPacketSize0` as a raw
+    // descriptor byte, see [EP0_MAX_PACKET_SIZE]
     pub(crate) ep0_in: UsbEndpoint,
     pub(crate) ep0_out: UsbEndpoint,
     // strings
@@ -613,5 +615,45 @@ mod test {
             .await;
 
         assert!(res.is_err());
+    }
+
+    /// The synthesized device descriptor must carry bMaxPacketSize0 as-is: at high
+    /// speed 64, and at SuperSpeed and above the exponent 9 (512 bytes).
+    #[tokio::test]
+    async fn test_device_descriptor_ep0_max_packet_size() {
+        setup_test_logger();
+        for (speed, max_packet_size_0) in [
+            (UsbSpeed::High, 64),
+            (UsbSpeed::Super, 9),
+            (UsbSpeed::SuperPlus, 9),
+        ] {
+            let mut device = UsbDevice::new(0);
+            device.speed = speed as u32;
+            device.ep0_in.max_packet_size = max_packet_size_0;
+            device.ep0_out.max_packet_size = max_packet_size_0;
+
+            let desc = device
+                .handle_urb(
+                    device.ep0_in,
+                    None,
+                    u32::from(u16::MAX),
+                    SetupPacket {
+                        request_type: 0b10000000,
+                        request: StandardRequest::GetDescriptor as u8,
+                        value: (DescriptorType::Device as u16) << 8,
+                        index: 0,
+                        length: u16::MAX,
+                    },
+                    &[],
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                u16::from(desc[7]),
+                max_packet_size_0,
+                "{speed:?} bMaxPacketSize0"
+            );
+        }
     }
 }
