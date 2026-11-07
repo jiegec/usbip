@@ -32,7 +32,8 @@ echo "=== kernel: $(uname -r) ==="
 echo "=== loading modules ==="
 # The host controller drivers are modules on Debian/Ubuntu kernels, so the QEMU
 # USB devices only appear once they are loaded (order: HCD before its PCI glue).
-for mod in usb-common usbcore ehci-hcd ehci-pci xhci-hcd xhci-pci usbip-core vhci-hcd; do
+for mod in usb-common usbcore ehci-hcd ehci-pci \
+           xhci-hcd xhci-pci-renesas xhci-pci usbip-core vhci-hcd; do
     ko=$(find /lib/modules \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
         echo "- $mod: not present (built-in?)"
@@ -75,6 +76,10 @@ for _ in $(seq 1 20); do
     find_dev 46f4 0003 real > /dev/null && find_dev 46f4 0001 real > /dev/null && break
     sleep 1
 done
+if ! find_dev 46f4 0003 real > /dev/null || ! find_dev 46f4 0001 real > /dev/null; then
+    echo "WARN: not all QEMU USB devices showed up; dmesg:"
+    dmesg | tail -30
+fi
 
 echo "=== USB devices provided by QEMU ==="
 for d in /sys/bus/usb/devices/*; do

@@ -78,7 +78,7 @@ cp "$DEMO_BIN" "$ROOT/demo_server"
 # Bundle whatever is present in the tree; built-in modules are simply absent and
 # get skipped. Order matters: dependencies first.
 for mod in usb-common usbcore hid hid-generic usbhid usbip-core vhci-hcd cdc-acm \
-           ehci-hcd ehci-pci xhci-hcd xhci-pci; do
+           ehci-hcd ehci-pci xhci-hcd xhci-pci-renesas xhci-pci; do
     ko=$(find "$MODTREE" \( -name "$mod.ko" -o -name "$mod.ko.*" \) -print -quit 2>/dev/null)
     if [ -z "$ko" ]; then
         echo "- kernel module $mod not present (assuming built-in)"
