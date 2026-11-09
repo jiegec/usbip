@@ -2,6 +2,22 @@
 use super::*;
 use nusb::MaybeFuture;
 
+/// Round an IN transfer length up to a whole number of packets.
+///
+/// nusb rejects IN transfers whose requested length is not a multiple of the
+/// endpoint's maximum packet size. USB/IP URBs often are not (a SCSI INQUIRY is
+/// 36 bytes on a 512-byte bulk endpoint), so round up for the transfer and
+/// truncate the completion back to the requested length.
+fn in_transfer_len(requested: u32, max_packet_size: usize) -> usize {
+    let max_packet_size = max_packet_size.max(1);
+    let requested = requested as usize;
+    if requested == 0 {
+        0
+    } else {
+        requested.div_ceil(max_packet_size) * max_packet_size
+    }
+}
+
 /// A handler to pass requests to interface of a rusb USB device of the host
 #[derive(Clone, Debug)]
 pub struct RusbUsbHostInterfaceHandler {
@@ -237,10 +253,18 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
                     .map_err(|e| {
                         std::io::Error::other(format!("Failed to open interrupt endpoint: {}", e))
                     })?;
-                let buffer = endpoint.allocate(transfer_buffer_length as usize);
+                if transfer_buffer_length == 0 {
+                    return Ok(vec![]);
+                }
+                let buffer = endpoint.allocate(in_transfer_len(
+                    transfer_buffer_length,
+                    endpoint.max_packet_size(),
+                ));
                 let completion = endpoint.transfer_blocking(buffer, timeout);
                 if completion.status.is_ok() {
-                    return Ok(completion.buffer.to_vec());
+                    let mut data = completion.buffer.to_vec();
+                    data.truncate(transfer_buffer_length as usize);
+                    return Ok(data);
                 }
             } else {
                 // interrupt out
@@ -251,7 +275,12 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
                     })?;
                 if !req.is_empty() {
                     let mut buffer = endpoint.allocate(req.len());
-                    buffer.copy_from_slice(req);
+                    // `allocate` returns a Buffer whose `len` is 0 (it is the
+                    // `requested_len` that is set), so `copy_from_slice` would
+                    // write into an empty slice and panic. `extend_from_slice`
+                    // initializes the bytes and updates `len`, which is what an
+                    // OUT transfer sends.
+                    buffer.extend_from_slice(req);
                     endpoint.transfer_blocking(buffer, timeout);
                 }
             }
@@ -264,10 +293,18 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
                     .map_err(|e| {
                         std::io::Error::other(format!("Failed to open bulk endpoint: {}", e))
                     })?;
-                let buffer = endpoint.allocate(transfer_buffer_length as usize);
+                if transfer_buffer_length == 0 {
+                    return Ok(vec![]);
+                }
+                let buffer = endpoint.allocate(in_transfer_len(
+                    transfer_buffer_length,
+                    endpoint.max_packet_size(),
+                ));
                 let completion = endpoint.transfer_blocking(buffer, timeout);
                 if completion.status.is_ok() {
-                    return Ok(completion.buffer.to_vec());
+                    let mut data = completion.buffer.to_vec();
+                    data.truncate(transfer_buffer_length as usize);
+                    return Ok(data);
                 }
             } else {
                 // bulk out
@@ -278,7 +315,10 @@ impl UsbInterfaceHandler for NusbUsbHostInterfaceHandler {
                     })?;
                 if !req.is_empty() {
                     let mut buffer = endpoint.allocate(req.len());
-                    buffer.copy_from_slice(req);
+                    // See the interrupt OUT branch above: Buffer::len starts at
+                    // 0, so the bytes have to be appended rather than copied
+                    // into the (empty) dereferenced slice.
+                    buffer.extend_from_slice(req);
                     endpoint.transfer_blocking(buffer, timeout);
                 }
             }
@@ -388,5 +428,23 @@ impl UsbDeviceHandler for NusbUsbHostDeviceHandler {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::in_transfer_len;
+
+    #[test]
+    fn test_in_transfer_len_rounds_up_to_packets() {
+        assert_eq!(in_transfer_len(0, 512), 0);
+        assert_eq!(in_transfer_len(1, 512), 512);
+        assert_eq!(in_transfer_len(36, 512), 512);
+        assert_eq!(in_transfer_len(512, 512), 512);
+        assert_eq!(in_transfer_len(513, 512), 1024);
+        assert_eq!(in_transfer_len(13, 64), 64);
+        assert_eq!(in_transfer_len(8, 8), 8);
+        // Degenerate endpoint max packet size must not divide by zero.
+        assert_eq!(in_transfer_len(3, 0), 3);
     }
 }

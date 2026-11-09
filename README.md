@@ -84,13 +84,18 @@ in the guest so both the serial device and the keyboard are verified.
 
 ### QEMU host-passthrough test
 
-The `host` example is tested the same way, with two other emulated devices: a
-SuperSpeed one (`usb-uas` on an emulated xHCI controller) and a high-speed one
-(`usb-storage` on an emulated EHCI controller). Inside the guest the example
-exports them over USB/IP -- first with the nusb backend, then with libusb/rusb --
-and the guest attaches them back through `vhci-hcd`. The test checks that the
-virtual copy enumerates at the same speed, with the same `bMaxPacketSize0` (the
-exponent 9, i.e. 512 bytes, at SuperSpeed) and the same `bcdUSB` as the real device:
+The `host` example is tested the same way, with emulated devices: a SuperSpeed
+UAS device (`usb-uas`) and a SuperSpeed bulk-only device (`usb-bot`) on an
+emulated xHCI controller, plus a high-speed `usb-storage` device on an emulated
+EHCI controller. Inside the guest the example exports them over USB/IP -- first
+with the nusb backend, then with libusb/rusb -- and the guest attaches them back
+through `vhci-hcd`. The test checks that each virtual copy enumerates at the same
+speed, with the same `bMaxPacketSize0` (the exponent 9, i.e. 512 bytes, at
+SuperSpeed) and the same `bcdUSB` as the real device, and it writes and reads back
+a block through both bulk-only devices, exercising bulk IN/OUT and the
+SuperSpeed endpoint companion descriptors. The UAS device is only enumerated:
+`vhci-hcd` does not support streams, which the Linux UAS driver requires at
+SuperSpeed.
 
 ```bash
 ./scripts/qemu/run-qemu-passthrough-test.sh --build --dump-log

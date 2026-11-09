@@ -8,6 +8,14 @@ pub struct UsbInterface {
     pub interface_subclass: u8,
     pub interface_protocol: u8,
     pub endpoints: Vec<UsbEndpoint>,
+    /// Extra descriptors that follow each endpoint descriptor, aligned with
+    /// `endpoints`.
+    ///
+    /// These carry class- or speed-specific endpoint descriptors such as the UAS
+    /// Pipe Usage descriptor and the SuperSpeed Endpoint Companion. Host
+    /// passthrough copies them verbatim from the real device; for simulated
+    /// devices the list may be empty.
+    pub endpoint_extra: Vec<Vec<u8>>,
     pub string_interface: u8,
     pub class_specific_descriptor: Vec<u8>,
 

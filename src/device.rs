@@ -36,6 +36,17 @@ impl From<u16> for Version {
     }
 }
 
+impl Version {
+    /// Little-endian BCD encoding of the version, as used by `bcdUSB` and
+    /// `bcdDevice`.
+    ///
+    /// The fields are decimal digits (see [`From<u16>`] and [`rusb::Version`]):
+    /// `major.minor.patch`, so the low byte is `(minor << 4) | patch`.
+    fn bcd(&self) -> [u8; 2] {
+        [((self.minor & 0xF) << 4) | (self.patch & 0xF), self.major]
+    }
+}
+
 /// Represent a USB device
 #[derive(Clone, Default, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
@@ -61,6 +72,13 @@ pub struct UsbDevice {
     pub device_handler: Option<Arc<Mutex<Box<dyn UsbDeviceHandler + Send>>>>,
 
     pub usb_version: Version,
+
+    /// Raw BOS descriptor of the device, if it provides one.
+    ///
+    /// The BOS descriptor and its capabilities (e.g. the SuperSpeed USB device
+    /// capability with U1/U2 exit latencies) are passed through verbatim for
+    /// host passthrough devices; empty for simulated devices.
+    pub bos: Vec<u8>,
 
     // ep0 endpoints; `max_packet_size` holds `bMaxPacketSize0` as a raw
     // descriptor byte, see [EP0_MAX_PACKET_SIZE]
@@ -193,6 +211,7 @@ impl UsbDevice {
             interface_subclass,
             interface_protocol,
             endpoints,
+            endpoint_extra: Vec::new(),
             string_interface,
             class_specific_descriptor,
             handler,
@@ -337,21 +356,23 @@ impl UsbDevice {
                             Some(Device) => {
                                 debug!("Get device descriptor");
                                 // Standard Device Descriptor
+                                let usb_version = self.usb_version.bcd();
+                                let device_bcd = self.device_bcd.bcd();
                                 let mut desc = vec![
                                     0x12,         // bLength
                                     Device as u8, // bDescriptorType: Device
-                                    self.usb_version.minor,
-                                    self.usb_version.major, // bcdUSB: USB 2.0
-                                    self.device_class,      // bDeviceClass
-                                    self.device_subclass,   // bDeviceSubClass
-                                    self.device_protocol,   // bDeviceProtocol
+                                    usb_version[0],
+                                    usb_version[1],                    // bcdUSB
+                                    self.device_class,                 // bDeviceClass
+                                    self.device_subclass,              // bDeviceSubClass
+                                    self.device_protocol,              // bDeviceProtocol
                                     self.ep0_in.max_packet_size as u8, // bMaxPacketSize0
-                                    self.vendor_id as u8,   // idVendor
+                                    self.vendor_id as u8,              // idVendor
                                     (self.vendor_id >> 8) as u8,
                                     self.product_id as u8, // idProduct
                                     (self.product_id >> 8) as u8,
-                                    self.device_bcd.minor, // bcdDevice
-                                    self.device_bcd.major,
+                                    device_bcd[0],
+                                    device_bcd[1],            // bcdDevice
                                     self.string_manufacturer, // iManufacturer
                                     self.string_product,      // iProduct
                                     self.string_serial,       // iSerial
@@ -366,12 +387,16 @@ impl UsbDevice {
                             }
                             Some(BOS) => {
                                 debug!("Get BOS descriptor");
-                                let mut desc = vec![
-                                    0x05,      // bLength
-                                    BOS as u8, // bDescriptorType: BOS
-                                    0x05, 0x00, // wTotalLength
-                                    0x00, // bNumCapabilities
-                                ];
+                                let mut desc = if self.bos.is_empty() {
+                                    vec![
+                                        0x05,      // bLength
+                                        BOS as u8, // bDescriptorType: BOS
+                                        0x05, 0x00, // wTotalLength
+                                        0x00, // bNumCapabilities
+                                    ]
+                                } else {
+                                    self.bos.clone()
+                                };
 
                                 // requested len too short: wLength < real length
                                 if setup_packet.length < desc.len() as u16 {
@@ -409,7 +434,7 @@ impl UsbDevice {
                                     let mut specific = intf.class_specific_descriptor.clone();
                                     intf_desc.append(&mut specific);
                                     // endpoint descriptors
-                                    for endpoint in &intf.endpoints {
+                                    for (j, endpoint) in intf.endpoints.iter().enumerate() {
                                         let mut ep_desc = vec![
                                             0x07,                // bLength
                                             Endpoint as u8,      // bDescriptorType: Endpoint
@@ -420,6 +445,12 @@ impl UsbDevice {
                                             endpoint.interval,                     // bInterval
                                         ];
                                         intf_desc.append(&mut ep_desc);
+                                        // e.g. SuperSpeed endpoint companion or UAS
+                                        // pipe usage, which must directly follow the
+                                        // endpoint descriptor.
+                                        if let Some(extra) = intf.endpoint_extra.get(j) {
+                                            intf_desc.extend_from_slice(extra);
+                                        }
                                     }
                                     desc.append(&mut intf_desc);
                                 }
@@ -478,17 +509,18 @@ impl UsbDevice {
                             Some(DeviceQualifier) => {
                                 debug!("Get device qualifier descriptor");
                                 // Device_Qualifier Descriptor
+                                let usb_version = self.usb_version.bcd();
                                 let mut desc = vec![
                                     0x0A,                  // bLength
                                     DeviceQualifier as u8, // bDescriptorType: Device Qualifier
-                                    self.usb_version.minor,
-                                    self.usb_version.major, // bcdUSB
-                                    self.device_class,      // bDeviceClass
-                                    self.device_subclass,   // bDeviceSUbClass
-                                    self.device_protocol,   // bDeviceProtocol
+                                    usb_version[0],
+                                    usb_version[1],                     // bcdUSB
+                                    self.device_class,                  // bDeviceClass
+                                    self.device_subclass,               // bDeviceSUbClass
+                                    self.device_protocol,               // bDeviceProtocol
                                     self.qualifier_max_packet_size_0(), // bMaxPacketSize0
-                                    self.num_configurations, // bNumConfigurations
-                                    0x00,                   // bReserved
+                                    self.num_configurations,            // bNumConfigurations
+                                    0x00,                               // bReserved
                                 ];
 
                                 // requested len too short: wLength < real length
@@ -756,5 +788,184 @@ mod test {
 
         assert_eq!(desc[1], DescriptorType::DeviceQualifier as u8);
         assert_eq!(desc[7], 64);
+    }
+
+    /// Endpoint extra descriptors (SuperSpeed companion, UAS pipe usage) are
+    /// emitted directly after the endpoint descriptor, as required by USB.
+    #[tokio::test]
+    async fn test_configuration_endpoint_extra() {
+        setup_test_logger();
+
+        #[derive(Debug)]
+        struct DummyHandler;
+        impl UsbInterfaceHandler for DummyHandler {
+            fn get_class_specific_descriptor(&self) -> Vec<u8> {
+                Vec::new()
+            }
+            fn handle_urb(
+                &mut self,
+                _interface: &UsbInterface,
+                _ep: UsbEndpoint,
+                _transfer_buffer_length: u32,
+                _setup: SetupPacket,
+                _req: &[u8],
+            ) -> Result<Vec<u8>> {
+                Ok(Vec::new())
+            }
+            fn as_any(&mut self) -> &mut dyn Any {
+                self
+            }
+        }
+
+        let mut device = UsbDevice::new(0).with_interface(
+            0xff,
+            0,
+            0,
+            None,
+            vec![UsbEndpoint {
+                address: 0x81,
+                attributes: EndpointAttributes::Bulk as u8,
+                max_packet_size: 1024,
+                interval: 0,
+            }],
+            Arc::new(Mutex::new(
+                Box::new(DummyHandler) as Box<dyn UsbInterfaceHandler + Send>
+            )),
+        );
+        device.interfaces[0]
+            .endpoint_extra
+            .push(vec![0x06, 0x30, 0x0f, 0x00, 0x00, 0x00]);
+
+        let desc = device
+            .handle_urb(
+                device.ep0_in,
+                None,
+                u32::from(u16::MAX),
+                SetupPacket {
+                    request_type: 0b10000000,
+                    request: StandardRequest::GetDescriptor as u8,
+                    value: (DescriptorType::Configuration as u16) << 8,
+                    index: 0,
+                    length: u16::MAX,
+                },
+                &[],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(u16::from_le_bytes([desc[2], desc[3]]) as usize, desc.len());
+        assert!(
+            desc.windows(6)
+                .any(|w| w == [0x06, 0x30, 0x0f, 0x00, 0x00, 0x00]),
+            "companion descriptor missing"
+        );
+    }
+
+    /// The BOS descriptor (and with it the SuperSpeed capability) is passed
+    /// through from the real device, and truncated for short requests.
+    #[tokio::test]
+    async fn test_bos_descriptor_passthrough() {
+        setup_test_logger();
+        let mut device = UsbDevice::new(0);
+        device.set_speed(UsbSpeed::Super);
+        device.bos = vec![
+            0x05, 0x0F, 0x0F, 0x00, 0x01, // BOS header: wTotalLength=15, 1 capability
+            0x0A, 0x10, 0x00, 0x0E, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, // SuperSpeed
+        ];
+
+        async fn get_bos(device: &UsbDevice, length: u16) -> Vec<u8> {
+            device
+                .handle_urb(
+                    device.ep0_in,
+                    None,
+                    u32::from(length),
+                    SetupPacket {
+                        request_type: 0b10000000,
+                        request: StandardRequest::GetDescriptor as u8,
+                        value: (DescriptorType::BOS as u16) << 8,
+                        index: 0,
+                        length,
+                    },
+                    &[],
+                )
+                .await
+                .unwrap()
+        }
+
+        let full = get_bos(&device, u16::MAX).await;
+        assert_eq!(full[1], DescriptorType::BOS as u8);
+        assert_eq!(full.len(), 15);
+
+        let truncated = get_bos(&device, 7).await;
+        assert_eq!(truncated.len(), 7);
+        assert_eq!(&truncated[..7], &[0x05, 0x0F, 0x0F, 0x00, 0x01, 0x0A, 0x10]);
+    }
+
+    /// `bcdUSB` and `bcdDevice` are BCD: the low byte is `(minor << 4) | patch`,
+    /// so a device reporting 3.02 must not be rounded down to 3.00.
+    #[test]
+    fn test_version_bcd_roundtrip() {
+        for value in [0x0100u16, 0x0110, 0x0200, 0x0210, 0x0300, 0x0302, 0x0320] {
+            let version: Version = value.into();
+            assert_eq!(u16::from_le_bytes(version.bcd()), value, "{value:#06x}");
+        }
+    }
+
+    /// Both BCD fields of the synthesized device descriptor keep their sub-minor
+    /// digit, so the client sees the same `bcdUSB`/`bcdDevice` as the real device.
+    #[tokio::test]
+    async fn test_device_descriptor_bcd_fields() {
+        setup_test_logger();
+        let mut device = UsbDevice::new(0);
+        device.usb_version = 0x0302u16.into();
+        device.device_bcd = 0x0210u16.into();
+
+        let desc = device
+            .handle_urb(
+                device.ep0_in,
+                None,
+                u32::from(u16::MAX),
+                SetupPacket {
+                    request_type: 0b10000000,
+                    request: StandardRequest::GetDescriptor as u8,
+                    value: (DescriptorType::Device as u16) << 8,
+                    index: 0,
+                    length: u16::MAX,
+                },
+                &[],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(u16::from_le_bytes([desc[2], desc[3]]), 0x0302);
+        assert_eq!(u16::from_le_bytes([desc[12], desc[13]]), 0x0210);
+    }
+
+    /// The device qualifier carries the same BCD-encoded `bcdUSB`.
+    #[tokio::test]
+    async fn test_device_qualifier_bcd_version() {
+        setup_test_logger();
+        let mut device = UsbDevice::new(0);
+        device.set_speed(UsbSpeed::Super);
+        device.usb_version = 0x0302u16.into();
+
+        let desc = device
+            .handle_urb(
+                device.ep0_in,
+                None,
+                u32::from(u16::MAX),
+                SetupPacket {
+                    request_type: 0b10000000,
+                    request: StandardRequest::GetDescriptor as u8,
+                    value: (DescriptorType::DeviceQualifier as u16) << 8,
+                    index: 0,
+                    length: u16::MAX,
+                },
+                &[],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(u16::from_le_bytes([desc[2], desc[3]]), 0x0302);
     }
 }

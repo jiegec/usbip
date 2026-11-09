@@ -82,6 +82,7 @@ impl UsbIpServer {
                 let intf = dev.claim_interface(intf_num).wait().unwrap();
                 let alt_setting = intf.descriptors().next().unwrap();
                 let mut endpoints = vec![];
+                let mut endpoint_extra = vec![];
 
                 for ep_desc in alt_setting.endpoints() {
                     endpoints.push(UsbEndpoint {
@@ -90,6 +91,10 @@ impl UsbIpServer {
                         max_packet_size: ep_desc.max_packet_size() as u16,
                         interval: ep_desc.interval(),
                     });
+                    // Keep class/speed-specific endpoint descriptors (UAS pipe
+                    // usage, SuperSpeed endpoint companion) in the synthesized
+                    // configuration descriptor.
+                    endpoint_extra.push(ep_desc.descriptors().as_bytes().to_vec());
                 }
 
                 let handler = Arc::new(Mutex::new(Box::new(NusbUsbHostInterfaceHandler::new(
@@ -101,6 +106,7 @@ impl UsbIpServer {
                     interface_subclass: alt_setting.subclass(),
                     interface_protocol: alt_setting.protocol(),
                     endpoints,
+                    endpoint_extra,
                     string_interface: alt_setting.string_index().map(|nz| nz.get()).unwrap_or(0),
                     class_specific_descriptor: Vec::new(),
                     handler,
@@ -127,6 +133,20 @@ impl UsbIpServer {
             // SuperSpeed without `bcdUSB >= 0x0300`, so leaving it at 0 broke
             // enumeration of every USB 3 device.
             let device_desc = dev.device_descriptor();
+            // BOS is only defined for USB 2.1+; capture it so the SuperSpeed
+            // capability (and its LPM latencies) survives passthrough.
+            let bos = if device_desc.usb_version() >= 0x0201 {
+                dev.get_descriptor(
+                    DescriptorType::BOS as u8,
+                    0,
+                    0,
+                    std::time::Duration::from_secs(1),
+                )
+                .wait()
+                .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
 
             let mut device = UsbDevice {
                 path: format!("/sys/bus/{}/{}/{}", bus_num_val, device_address, 0),
@@ -144,6 +164,7 @@ impl UsbIpServer {
                 device_protocol: device_info.protocol(),
                 device_bcd: device_info.device_version().into(),
                 usb_version: device_desc.usb_version().into(),
+                bos,
                 configuration_value: cfg.configuration_value(),
                 num_configurations: dev.configurations().count() as u8,
                 ep0_in: UsbEndpoint {
@@ -207,6 +228,31 @@ impl UsbIpServer {
             };
 
             let handle = Arc::new(Mutex::new(open_device));
+            let usb_bcd = {
+                let v = desc.usb_version();
+                ((v.major() as u16) << 8) | ((v.minor() as u16) << 4) | v.sub_minor() as u16
+            };
+            let bos = if usb_bcd >= 0x0201 {
+                // GET_DESCRIPTOR(BOS): bmRequestType 0x80 (IN, standard, device),
+                // bRequest 6, wValue = BOS descriptor type << 8.
+                let mut buf = vec![0u8; 256];
+                match handle.lock().unwrap().read_control(
+                    0x80,
+                    0x06,
+                    (DescriptorType::BOS as u16) << 8,
+                    0,
+                    &mut buf,
+                    std::time::Duration::from_secs(1),
+                ) {
+                    Ok(len) => {
+                        buf.truncate(len);
+                        buf
+                    }
+                    Err(_) => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
             let mut interfaces = vec![];
             handle
                 .lock()
@@ -221,7 +267,16 @@ impl UsbIpServer {
                     .unwrap()
                     .set_auto_detach_kernel_driver(true)
                     .ok();
+                // usbfs requires the interface to be claimed before submitting
+                // transfers; libusb's auto-detach makes this also detach a bound
+                // kernel driver.
+                handle
+                    .lock()
+                    .unwrap()
+                    .claim_interface(intf_desc.interface_number())
+                    .ok();
                 let mut endpoints = vec![];
+                let mut endpoint_extra = vec![];
 
                 for ep_desc in intf_desc.endpoint_descriptors() {
                     endpoints.push(UsbEndpoint {
@@ -230,6 +285,7 @@ impl UsbIpServer {
                         max_packet_size: ep_desc.max_packet_size(),
                         interval: ep_desc.interval(),
                     });
+                    endpoint_extra.push(ep_desc.extra().map(Vec::from).unwrap_or_default());
                 }
 
                 let handler = Arc::new(Mutex::new(Box::new(RusbUsbHostInterfaceHandler::new(
@@ -241,6 +297,7 @@ impl UsbIpServer {
                     interface_subclass: intf_desc.sub_class_code(),
                     interface_protocol: intf_desc.protocol_code(),
                     endpoints,
+                    endpoint_extra,
                     string_interface: intf_desc.description_string_index().unwrap_or(0),
                     class_specific_descriptor: Vec::from(intf_desc.extra()),
                     handler,
@@ -268,6 +325,7 @@ impl UsbIpServer {
                 device_subclass: desc.sub_class_code(),
                 device_protocol: desc.protocol_code(),
                 device_bcd: desc.device_version().into(),
+                bos,
                 configuration_value: cfg.number(),
                 num_configurations: desc.num_configurations(),
                 ep0_in: UsbEndpoint {

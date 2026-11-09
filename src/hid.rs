@@ -211,6 +211,7 @@ mod tests {
             interface_subclass: 0,
             interface_protocol: 0,
             endpoints: vec![],
+            endpoint_extra: vec![],
             string_interface: 0,
             class_specific_descriptor: handler.get_class_specific_descriptor(),
             handler: std::sync::Arc::new(std::sync::Mutex::new(Box::new(
